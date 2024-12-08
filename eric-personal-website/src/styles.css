@@ -1,0 +1,53 @@
+/* You can add global styles to this file, and also import other style files */
+
+
+@font-face {
+    font-family: "Monaspace";
+    src: url("fonts/webfonts/MonaspaceXenon-Light.woff2") format("woff2");
+  }
+
+:root {
+    --global-small-space: 40px; /* Set the global margin value */
+    --color-base: #F5F4EF;
+    --color-text: #000000;
+    --color-text-hover: #777;
+    --font: "Monaspace";
+    --font-size-regular: 16px;
+    --font-size-header: 24px;
+    --global-margin: 20px;
+    --max-width: 700px
+}
+
+body {
+    margin: 0px;
+    padding: 0px;
+    background-color: var(--color-base);
+    font-family: var(--font);
+}
+
+.text-container {
+    margin-left: var(--global-margin);
+    margin-right: var(--global-margin);
+    width: 100%;
+    max-width: var(--max-width);
+    text-align: left;
+    line-height: 1.6;
+    font-size: var(--font-size-regular);
+}
+
+.video-container {
+    margin-left: var(--global-margin);
+    margin-right: var(--global-margin);
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-width: var(--max-width); 
+}
+
+.video-container iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}

@@ -1,0 +1,24 @@
+<div class="text-container">
+    <p>
+        Hello!
+        I'm a robotics engineer from Canada.
+        My experience began on the mechanical side, however I see myself as more of a full-stack robotics oriented problem solver.  
+        I've had a ton of fun exploring robotics through autonomous submarines, upper limb prosthetics, and lately to dexterous manipulation of humanoid robots focusing on teleoperation.
+        Check out my project portfolio below. 
+    </p>
+</div>
+
+<div class="text-container">
+    <h2>Projects</h2>
+    <ul>
+        <li *ngFor="let project of projects">
+            <div class="project-div" [routerLink]="['/projects', project.slug]">
+                <h3>{{ project.title }}</h3>
+                <div>
+                    <img [src]="project.icon_path" [alt]="project.title" style="width:100px; height:auto;"/>
+                </div>
+                {{ project.description}}
+            </div>
+        </li>
+    </ul>
+</div>

@@ -1,0 +1,7 @@
+.project-div
+{
+    cursor: pointer;
+            &:hover {
+                color: var(--color-text-hover)
+            }
+}
