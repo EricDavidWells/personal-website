@@ -43,4 +43,11 @@ export const routes: Routes = [
             return import('./components/compliant-sensors/compliant-sensors.component').then((m) => m.CompliantSensorsComponent )
         }
     },
+    {
+        path: 'projects/esp32-latency',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/esp32-latency/esp32-latency.component').then((m) => m.Esp32LatencyComponent )
+        }
+    },
 ];
