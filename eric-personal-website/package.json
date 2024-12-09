@@ -1,5 +1,5 @@
 {
-  "name": "website-test",
+  "name": "eric-david-wells",
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
@@ -7,7 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "serve:ssr:website-test": "node dist/website-test/server/server.mjs"
+    "serve:ssr:eric-david-wells": "node dist/eric-david-wells/server/server.mjs"
   },
   "private": true,
   "dependencies": {

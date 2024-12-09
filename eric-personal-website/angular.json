@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "website-test": {
+    "eric-david-wells": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -13,7 +13,7 @@
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
-            "outputPath": "dist/website-test",
+            "outputPath": "dist/eric-david-wells",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": [
@@ -65,10 +65,10 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "website-test:build:production"
+              "buildTarget": "eric-david-wells:build:production"
             },
             "development": {
-              "buildTarget": "website-test:build:development"
+              "buildTarget": "eric-david-wells:build:development"
             }
           },
           "defaultConfiguration": "development"
