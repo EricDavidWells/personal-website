@@ -36,4 +36,11 @@ export const routes: Routes = [
             return import('./components/polyvolve/polyvolve.component').then((m) => m.PolyvolveComponent )
         }
     },
+    {
+        path: 'projects/compliant-sensors',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/compliant-sensors/compliant-sensors.component').then((m) => m.CompliantSensorsComponent )
+        }
+    },
 ];

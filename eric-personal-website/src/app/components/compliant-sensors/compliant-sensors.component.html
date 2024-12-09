@@ -1,0 +1,67 @@
+<div class="text-container-wide">
+    <h2>
+        {{project?.title}}
+    </h2>
+
+    <div class="image-container">
+        <img src="assets/images/compliant-sensors-icon.png" alt="compliant-sensor-before-after"/>
+    </div>
+
+
+    <p>
+        This post provides a high-level overview of this project.  
+        For a more detailed analysis, check out <a href="https://conferences.lib.unb.ca/index.php/mec/article/view/74">this conference paper</a> I wrote on the project.  
+    </p>
+
+    <h2>
+        Overview
+    </h2>
+
+    <p>
+        During my graduate degree, I found myself needing to measure the grip force of a prosthetic hand.  
+        I had previously seen researchers measure the grasp force by taping force-sensitive resistors to the prosthetic fingertip. 
+        Capacitive force sensors have previously been shown to perform better than commonly used force-sensitive resistors for this application. 
+        These sensors are designed to attach to a flat surface, with the force loading evenly distributed across its surface area. 
+        However, prosthetic hands undergo various loading conditions that do not represent this ideal situation.  
+        I hypothesized that encapsulating a capacitive force sensor in a compliant material would disperse the force evenly throughout the sensor, allowing for more robust measurement to various loading conditions.  
+        Both the baseline sensor and the compliant sensor are shown here.
+    </p>
+
+    <div class="image-container">
+        <img src="assets/images/compliant-sensors/compliant-sensors-before-after.png" alt="compliant-sensor-before-after"/>
+    </div>
+
+    <h2>
+        Methods
+    </h2>
+
+    <p>
+        I calibrated the sensors under ideal conditions, with pressure evenly distributed over the sensor surface area.  
+        For all other conditions, the calibration curve was used to predict the force compared with the true force reading measured from a high accuracy load cell.
+    </p>
+    
+    <div class="image-container-full">
+        <img src="assets/images/compliant-sensors/compliant-sensors-conditions.png" alt="compliant-sensors-conditions"/>
+    </div>
+
+    <h2>
+        Results
+    </h2>
+
+    <div class="images-row">
+        <div class="image-container">
+            <img src="assets/images/compliant-sensors/compliant-sensors-summary.png" alt="compliant-sensors-summary"/>
+        </div>
+        <div class="image-container">
+            <img src="assets/images/compliant-sensors/compliant-sensors-summary-table.png" alt="compliant-sensors-summary-table"/>
+        </div>
+    </div>
+    <p>
+        The blue line is the calibration curve for both configurations.  
+        Notice how the baseline configuration lines are all very spread out, indicating how the different loading conditions resulted in very different measured force values.  
+        The compliant configuration lines are all quite close together, showing that the compliant material helped dampen the impact of different loading conditions.
+        Quantitatively, the baseline sensor had ten times more error when using the rounded indenter and double the error when shifting the indenter position.    
+    </p>
+        
+
+</div>
