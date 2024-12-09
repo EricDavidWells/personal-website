@@ -1,0 +1,14 @@
+.video-container {
+    flex: 1;
+    text-align: center; /* Center align the title */
+    margin-bottom: var(--global-small-space)
+}
+
+.video-container iframe {
+    width: 100%;
+    height: auto;
+    display: block;
+    margin-bottom: 10px; /* Space between video and title */
+    aspect-ratio: 16 / 9; /* Maintain a 16:9 ratio */
+
+}

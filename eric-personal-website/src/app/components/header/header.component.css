@@ -15,7 +15,7 @@
 .left-nav h2 {
     margin-right: var(--global-small-space);
     margin-top: var(--global-small-space);
-    margin-bottom: var(--global-small-space);
+    margin-bottom: 0;
     cursor: pointer;
 }
 
@@ -23,3 +23,9 @@
     color: var(--color-text-hover);
 }
 
+.custom-divider {
+    border: none; /* Remove the default border */
+    height: 2px; /* Set the thickness of the line */
+    background-color: var(--color-text); /* Use your custom color variable */
+    /* margin: var(--global-small-space) 0; Add vertical spacing if needed */
+}

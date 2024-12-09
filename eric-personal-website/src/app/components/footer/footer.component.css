@@ -6,7 +6,13 @@
     align-items: center; /* Vertically align items */
     font-size: var(--font-size-header);
     gap: var(--global-small-space); /* Add space between the tags */
-    padding: var(--global-small-space); /* Optional for spacing */
+}
+
+.nav h2 {
+    margin-right: var(--global-small-space);
+    margin-top: 0;
+    margin-bottom: var(--global-small-space);
+    cursor: pointer;
 }
 
 .nav h2:hover{
@@ -25,4 +31,12 @@
     font-size: var(--font-size-header);
     cursor: pointer;
     
+}
+
+.custom-divider {
+    margin-top: var(--global-small-space);
+    border: none; /* Remove the default border */
+    height: 2px; /* Set the thickness of the line */
+    background-color: var(--color-text); /* Use your custom color variable */
+    /* margin: var(--global-small-space) 0; Add vertical spacing if needed */
 }

@@ -29,6 +29,7 @@ body {
 .text-container {
     margin-left: var(--global-margin);
     margin-right: var(--global-margin);
+    margin-bottom: 0px;
     width: 100%;
     max-width: var(--max-width);
     text-align: left;
@@ -45,15 +46,3 @@ body {
     line-height: 1.6;
     font-size: var(--font-size-regular);
 }
-  
-.image-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-
-/* .video-container-full-width {
-    width: 100%;
-    max-width: var(--max-width); 
-} */
