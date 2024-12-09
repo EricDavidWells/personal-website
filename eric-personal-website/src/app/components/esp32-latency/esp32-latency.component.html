@@ -5,13 +5,13 @@
     </h2>
 
     <p>
-    In previous projects that required wireless connectivity, I’ve used an external “Serial Port Profile” Bluetooth chip; however, this has several drawbacks
-    All signals are sent through serial to the Bluetooth chip, converted to a Bluetooth signal, received as a Bluetooth signal, then converted back to serial and received through a COM port on the receiving computer
-    While this system is straightforward to use, it comes with the price of serious transmission overhead
+    In previous projects that required wireless connectivity, I’ve used an external “Serial Port Profile” Bluetooth chip; however, this has several drawbacks.
+    All signals are sent through serial to the Bluetooth chip, converted to a Bluetooth signal, received as a Bluetooth signal, then converted back to serial and received through a COM port on the receiving computer.
+    While this system is straightforward to use, it comes with the price of serious transmission overhead.
     I’ve also used a few different SPP Bluetooth chips and almost always have some connectivity issues on the receiving end.
 
-    The massively popular ESP32 microcontroller, with built-in WiFi capabilities, might be the answer
-    I looked to test what kind of latency and throughput was possible when sending small data packets short distances from the ESP32 to a python server over WiFi
+    The massively popular ESP32 microcontroller, with built-in WiFi capabilities, might be the answer.
+    I looked to test what kind of latency and throughput was possible when sending small data packets short distances from the ESP32 to a python server over WiFi.
     This situation represents prosthesis control, where a small number of biological signals are used to interpret human intent, similar to the <a href="/projects/force-myography">force-myography</a> project I worked on.
     </p>
 
@@ -20,15 +20,15 @@
     </h2>
 
     <p>
-        In any robotics-related communication, a divide must be drawn between throughput and latency
-        Throughput refers to how much data can be transferred, while latency refers to how much delay comes with that transfer
-        For example, the video signal from streaming the mars rover Perseverance landing today has undoubtedly high throughput (Netflix video streams are estimated at 3Mbps)
-        However, the latency of this signal is extremely high, likely between 5-20 minutes!  This, of course, is because Mars is 5-20 light-minutes away from earth depending on planet positions, and we can’t expect our data signal to travel faster than the speed of light (because it is light)
-        Worry not, as Perseverance has been taught how to land without human intervention
-        Of course, this example is extreme, but the same rules apply to more common situations
-        I am often dealing with human biological signals to actuate prosthetic movement
-        For prosthesis control, even a small latency of just 100ms can impact performance
-        You can realize the importance of latency in a real-time system by operating a robot or playing an online game with 20 minutes of lag
+        In any robotics-related communication, a divide must be drawn between throughput and latency.
+        Throughput refers to how much data can be transferred, while latency refers to how much delay comes with that transfer.
+        For example, the video signal from streaming the mars rover Perseverance landing today has undoubtedly high throughput (Netflix video streams are estimated at 3Mbps).
+        However, the latency of this signal is extremely high, likely between 5-20 minutes!  This, of course, is because Mars is 5-20 light-minutes away from earth depending on planet positions, and we can’t expect our data signal to travel faster than the speed of light (because it is light).
+        Worry not, as Perseverance has been taught how to land without human intervention.
+        Of course, this example is extreme, but the same rules apply to more common situations.
+        I am often dealing with human biological signals to actuate prosthetic movement.
+        For prosthesis control, even a small latency of just 100ms can impact performance.
+        You can realize the importance of latency in a real-time system by operating a robot or playing an online game with 20 minutes of lag.
     </p>
 
     <h2>
@@ -37,19 +37,19 @@
 
     <p>
         All code can be found on my <a href="https://github.com/EricDavidWells/ESP32_latency">github</a>.
-        Measuring latency requires knowing the time a signal is sent and the time a signal is received
-        As the ESP32 and my laptop running the python server don’t share a clock, this isn’t easy
-        The proper thing to do would be to somehow hook both systems up to the same clock
-        Instead, I used a communication protocol that implements a  handshake
-        The handshake protocol ensures the ESP32 will not send any new data if the python server isn’t done receiving the previous packet
-        Measuring the time between data packets received can be a pseudo-measurement of latency
-        This technique would be a conservative estimate since it assumes that the ESP32 instantly sends an additional packet once the handshake is received
+        Measuring latency requires knowing the time a signal is sent and the time a signal is received.
+        As the ESP32 and my laptop running the python server don’t share a clock, this isn’t easy.
+        The proper thing to do would be to somehow hook both systems up to the same clock.
+        Instead, I used a communication protocol that implements a  handshake.
+        The handshake protocol ensures the ESP32 will not send any new data if the python server isn’t done receiving the previous packet.
+        Measuring the time between data packets received can be a pseudo-measurement of latency.
+        This technique would be a conservative estimate since it assumes that the ESP32 instantly sends an additional packet once the handshake is received.
         I opted to use was TCP protocol since it is already implemented in the supplied ESP32 libraries.
 
-        TCP is widely used for internet communication, and efficiencies have evolved to increase throughput that may adversely affect our use case
-        One of these efficiencies is the <a href="https://en.wikipedia.org/wiki/Nagle%27s_algorithm">Nagles Algorithm</a>, which reduces the number of packets sent by concatenating multiple packets
-        This is enabled by default in the ESP32 WiFi layer and must be disabled to get accurate latency measurements
-        Another important step is to limit the TCP receive buffer size on the python server to be the same size as the data being sent
+        TCP is widely used for internet communication, and efficiencies have evolved to increase throughput that may adversely affect our use case.
+        One of these efficiencies is the <a href="https://en.wikipedia.org/wiki/Nagle%27s_algorithm">Nagles Algorithm</a>, which reduces thenumber of packets sent by concatenating multiple packets.
+        This is enabled by default in the ESP32 WiFi layer and must be disabled to get accurate latency measurements.
+        Another important step is to limit the TCP receive buffer size on the python server to be the same size as the data being sent.
         If this step is omitted, the buffer may fill up with multiple packets over a large delay and be read rapidly, giving false readings.
 
         For this test, I used the ESP-32-DevKitC-VB to send a 16-byte packet to a constantly polling python server and measured the time between packets for 60 seconds.
@@ -63,12 +63,14 @@
         <img src="assets/images/esp32-latency/tcp-latency-timeseries.png" alt="assets/images/esp32-latency/timeseries.png"/>
     </div>
 
-The mean latency value was .00113s.  
-However, you can see there is a lot of variance in the latency value over time.  
-Often in robotics, the maximum possible latency is as important as the typical latency.  
-A hard real-time system has a maximum latency threshold or deadline to hit before the behaviour becomes erratic.  
-Even if the maximum latency threshold is rarely exceeded, the system will fail.  
-For this reason, it is recommended to look at latency as histograms or as a logit percentile plot.
+    <p>
+        The mean latency value was .00113s.  
+        However, you can see there is a lot of variance in the latency value over time.  
+        Often in robotics, the maximum possible latency is as important as the typical latency.  
+        A hard real-time system has a maximum latency threshold or deadline to hit before the behaviour becomes erratic.  
+        Even if the maximum latency threshold is rarely exceeded, the system will fail.  
+        For this reason, it is recommended to look at latency as histograms or as a logit percentile plot.
+    </p>
 
 <div class="images-row">
     <div class="image-container">
@@ -80,7 +82,9 @@ For this reason, it is recommended to look at latency as histograms or as a logi
 </div>
 
 <p>
-    Now we can easier see the representative dispersion of latency.  The max latency is around .0035s but occurs in &lt;2% of cases.  The typical operation will have a latency of 0.00113s.  
+    Now we can easier see the representative dispersion of latency.  
+    The max latency is around .0035s but occurs in &lt;2% of cases.  
+    The typical operation will have a latency of 0.00113s.  
 </p>
 
 <h2>

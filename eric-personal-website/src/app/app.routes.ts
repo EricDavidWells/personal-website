@@ -50,4 +50,11 @@ export const routes: Routes = [
             return import('./components/esp32-latency/esp32-latency.component').then((m) => m.Esp32LatencyComponent )
         }
     },
+    {
+        path: 'projects/advent-of-code',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/advent-of-code/advent-of-code.component').then((m) => m.AdventOfCodeComponent )
+        }
+    },
 ];
