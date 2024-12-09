@@ -29,4 +29,11 @@ export const routes: Routes = [
             return import('./components/axis-reloaded/axis-reloaded.component').then((m) => m.AxisReloadedComponent )
         }
     },
+    {
+        path: 'projects/polyvolve',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/polyvolve/polyvolve.component').then((m) => m.PolyvolveComponent )
+        }
+    },
 ];

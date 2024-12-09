@@ -1,0 +1,62 @@
+<div class="text-container-wide">
+    <h2>
+        {{project?.title}}
+    </h2>
+
+    <div class="video-container">
+        <video controls>
+            <source src="assets/images/polyvolve/iron-giant-side-by-side.mp4" type="video/mp4">
+        </video>
+    </div>
+
+
+    Polyvolve is a genetic algorithm that attempts to create a target image out of transparent polygons.  
+    The original idea came from a blog post by <a href="https://rogerjohansson.blog/2008/12/07/genetic-programming-evolution-of-mona-lisa/">Rojer Johanson</a>, although my implementation is quite a bit different.  
+    All of the code can be found on my <a href="https://github.com/EricDavidWells/Polyvolve/tree/master">github</a>.
+
+    <h2>
+        How It Works
+    </h2>
+
+    <p>
+        The algorithm starts by creating a bunch of randomized individual candidates to represent the target image.  
+        A string of DNA represents each individual.  
+        This DNA is translated from values between 0 and 1 to coordinates of polygon vertices and RGBA color values.  Each individual’s generated image is compared against the target image to evaluate their “fitness.”  The highest scoring individuals then become parents and create a new generation by combining their DNA.  These children have a chance to mutate and generate completely different genomes as well.  This process is repeated generation after generation, and the overall population fitness gets higher and higher.  
+        Eventually leading to some cool-looking pictures!
+    </p>
+
+    <h2>
+        Examples
+    </h2>
+
+    <div class="video-container">
+        <video controls>
+            <source src="assets/images/polyvolve/joker2_sidebysideplot_20s.mp4" type="video/mp4">
+        </video>
+    </div>
+
+    <div>
+        
+    </div>
+
+    <div class="videos-row">
+        <div class="video-container">
+            <img src="assets/images/polyvolve/manatee3.png" alt="manatee.png"/>
+            <div class="video-title">Original Image</div>
+        </div>
+        <div class="video-container">
+            <video controls>
+                <source src="assets/images/polyvolve/manatee_3vertice_20s.mp4" type="video/mp4">
+            </video>
+            <div class="video-title">3 Vertices Per Polygon</div>
+        </div>
+        <div class="video-container">
+            <video controls>
+                <source src="assets/images/polyvolve/manatee_10vertice_20s.mp4" type="video/mp4">
+            </video>
+            <div class="video-title">10 Vertices Per Polygon</div>
+        </div>
+    </div>
+    
+
+</div>
