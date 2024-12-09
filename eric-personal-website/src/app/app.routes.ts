@@ -57,4 +57,11 @@ export const routes: Routes = [
             return import('./components/advent-of-code/advent-of-code.component').then((m) => m.AdventOfCodeComponent )
         }
     },
+    {
+        path: 'projects/multi-myo',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/multi-myo/multi-myo.component').then((m) => m.MultiMyoComponent )
+        }
+    },
 ];

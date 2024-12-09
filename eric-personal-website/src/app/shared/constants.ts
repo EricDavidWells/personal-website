@@ -2,7 +2,7 @@ import { Project } from './project';
 
 export const PROJECTS: Project[] = [
   new Project(
-    'multi-myosharp',
+    'multi-myo',
     'Multi-Myosharp',
     '2021-02',
     'assets/images/multi-myosharp-icon.png',
