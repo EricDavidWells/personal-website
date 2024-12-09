@@ -1,0 +1,64 @@
+<div class="text-container-wide">
+    <h2>
+        {{project?.title}}
+    </h2>
+
+    <h3>
+        Overview
+    </h3>
+    <video class="video-container" controls>
+        <source src="assets/images/axis-reloaded/axis-reloaded-video.mp4" type="video/mp4">
+    </video>
+    <p>
+        Axis Reloaded is a robotic hand that uses robotics and computer vision to rotate a display platform like a human without dropping it
+        <a href="https://github.com/MarkSherstan">Mark Sherstan</a>, <a href="https://github.com/Gnarlywhale">Riley Dawson</a>, and I teamed up to create this device to showcase multidisciplinary engineering design for the University of Alberta’s Open House 2020 event
+        Axis Reloaded also made an appearance at the Telus World of Science Dark Matter event
+        We got inspiration from Mark Sektrakian, who created Axis (hence our name)
+        Check out our Github repository for the code and the wiki for more detailed info on the algorithm.
+    </p>
+
+    <h3>
+        How It Works
+    </h3>
+
+    <p>
+        The hand uses 15 servo motors to articulate 5 fingers with 3 degrees of freedom each
+        Each finger is treated as an open-chain manipulator
+        The Product of Exponentials forward kinematics method was used to compute the location of each fingertip
+        Finger trajectories and corresponding inverse kinematics were generated for each finger to keep the platform spinning
+        A webcam watches the plate and checks if it gets too off-center
+        If the plate is looking like it will fall,  trajectories will be planned to return the plate to the center position.
+
+        Once the webcam has detected that the plate is off-center by about 15 mm, the LED’s turn blue and the fingers stop moving
+        The internal raspberry pi calculates which direction it needs to push the plate back to the middle and generates trajectories for each finger to accomplish this
+        First, each finger moves to a neutral position, so the plate stays stable
+        Next, all fingers simultaneously travel in the target direction by the amount of offset detected
+        Finally, all fingers move back to where they were previously, and the spin cycle starts again.
+    </p>
+    <video class="video-container" controls>
+        <source src="assets/images/axis-reloaded/axis-reloaded-reset-video.mp4" type="video/mp4">
+    </video>
+
+    <h3>
+        Other Cool Pictures
+    </h3>
+
+    
+    <div class="images-row">
+        <div class="image-container">
+            <img src="assets/images/axis-reloaded/axis-reloaded-openhouse-1.jpg" alt="axis-reloaded-openhouse-1"/>
+        </div>
+        <div class="image-container">
+            <img src="assets/images/axis-reloaded/axis-reloaded-openhouse-2.jpg" alt="axis-reloaded-openhouse-2"/>
+        </div>
+        <div class="image-container">
+            <img src="assets/images/axis-reloaded/axis-reloaded-openhouse-3.jpg" alt="axis-reloaded-openhouse-3"/>
+        </div>
+    </div>
+
+    <video class="video-container" controls>
+        <source src="assets/images/axis-reloaded/axis-reloaded-video-2.mp4" type="video/mp4">
+    </video>
+
+</div>
+

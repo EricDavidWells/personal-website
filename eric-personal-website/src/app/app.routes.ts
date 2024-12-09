@@ -22,4 +22,11 @@ export const routes: Routes = [
             return import('./components/force-myography/force-myography.component').then((m) => m.ForceMyographyComponent)
         }
     },
+    {
+        path: 'projects/axis-reloaded',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/axis-reloaded/axis-reloaded.component').then((m) => m.AxisReloadedComponent )
+        }
+    },
 ];

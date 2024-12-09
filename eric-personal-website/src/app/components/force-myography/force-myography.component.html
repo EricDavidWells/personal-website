@@ -1,4 +1,4 @@
-<div class="text-container">
+<div class="text-container-wide">
     <h2>
         {{project?.title}}
     </h2>
@@ -41,13 +41,13 @@
         The armband wirelessly sends raw sensor values to a microprocessor where all computation occurs, such as digital signal processing, pattern recognition, and real-time control of a desktop mounted prosthetic arm.
     </p>
     <div class="images-row">
-        <div>
+        <div class="image-container">
             <img class="general-image-container" src="assets/images/force-myography/force-myography-custom-pcb.png" alt="force-myography-custom-pcb"/>
         </div>
-        <div>
+        <div class="image-container">
             <img class="general-image-container" src="assets/images/force-myography/force-myography-band.png" alt="force-myography-band"/>
         </div>
-        <div>
+        <div class="image-container">
             <img class="general-image-container" src="assets/images/force-myography/force-myography-pi.png" alt="force-myography-pi"/>
         </div>
     </div>
@@ -61,14 +61,16 @@
         testing split).
         Using principal component analysis to squish the data down to 3 dimensions, high separability between classes is seen.
     </p>
-    <div>
-        <img class="general-image-container" src="assets/images/force-myography/force-myography-gestures.jpg" alt="force-myography-gestures"/>
-    </div>
-    <div>
-        <img class="general-image-container" src="assets/images/force-myography/force-myography-time-series.png" alt="force-myography-time-series"/>
-    </div>
-    <div>
-        <img class="general-image-container" src="assets/images/force-myography/force-myography-pca.png" alt="force-myography-pca"/>
+    <div class="images-row">
+        <div class="image-container">
+            <img src="assets/images/force-myography/force-myography-gestures.jpg" alt="force-myography-gestures"/>
+        </div>
+        <div class="image-container">
+            <img src="assets/images/force-myography/force-myography-time-series.png" alt="force-myography-time-series"/>
+        </div>
+        <div class="image-container">
+            <img src="assets/images/force-myography/force-myography-pca.png" alt="force-myography-pca"/>
+        </div>
     </div>
     <h3>
         Comparison to EMG
@@ -87,14 +89,17 @@
         For both EMG and FMG, classifier choice has little impact on accuracy.
         To visualize separability, an open-source EMG dataset with similar gesture classifications was compared.
     </p>
-        <div>
-            <img class="general-image-container" src="assets/images/force-myography/force-myography-emg-fmg-comparison-pca.png" alt="force-myography-comparison-pca"/>
+        <div class="images-row">
+
+        <div class="image-container">
+            <img src="assets/images/force-myography/force-myography-emg-fmg-comparison-pca.png" alt="force-myography-comparison-pca"/>
         </div>
-        <div>
-            <img class="general-image-container" src="assets/images/force-myography/force-myography-emg-fmg-comparison-time.png" alt="force-myography-comparison-time"/>
+        <div class="image-container">
+            <img class="image-container" src="assets/images/force-myography/force-myography-emg-fmg-comparison-time.png" alt="force-myography-comparison-time"/>
         </div>
-        <div>
-            <img class="general-image-container" src="assets/images/force-myography/force-myography-emg-fmg-comparison-freq.png" alt="force-myography-comparison-pca-freq"/>
+        <div class="image-container">
+            <img class="image-container" src="assets/images/force-myography/force-myography-emg-fmg-comparison-freq.png" alt="force-myography-comparison-pca-freq"/>
+        </div>
         </div>
     <p>
         EMG comparison data obtained from: 
