@@ -5,7 +5,7 @@ export const routes: Routes = [
     path: '',
     pathMatch: 'full',
     loadComponent: () => {
-        return import('./home/home.component').then((m) => m.HomeComponent)
+        return import('./components/home/home.component').then((m) => m.HomeComponent)
     }
     },
     {
@@ -13,6 +13,13 @@ export const routes: Routes = [
         pathMatch: 'full',
         loadComponent: () => {
             return import('./components/blobs/blobs.component').then((m) => m.BlobsComponent)
+        }
+    },
+    {
+        path: 'projects/force-myography',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/force-myography/force-myography.component').then((m) => m.ForceMyographyComponent)
         }
     },
 ];
