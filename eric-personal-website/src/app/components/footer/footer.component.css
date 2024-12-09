@@ -1,0 +1,28 @@
+.footer {
+    display: flex;
+    justify-content: flex-start; /* Align tags to the left */
+    background-color: var(--color-base);
+    color: var(--color-text);
+    align-items: center; /* Vertically align items */
+    font-size: var(--font-size-header);
+    gap: var(--global-small-space); /* Add space between the tags */
+    padding: var(--global-small-space); /* Optional for spacing */
+}
+
+.nav h2:hover{
+    cursor: pointer;
+    color: var(--color-text-hover);
+}
+
+.nav a:hover{
+    cursor: pointer;
+    color: var(--color-text-hover);
+}
+
+.nav a {
+    text-decoration: none;
+    color: var(--color-text);
+    font-size: var(--font-size-header);
+    cursor: pointer;
+    
+}

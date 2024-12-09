@@ -1,23 +1,25 @@
-
-
 .header {
     display: flex;
+    justify-content: space-between; /* Align left and right sections */
     background-color: var(--color-base);
     color: var(--color-text);
-    align-items: left;
+    align-items: center; /* Vertically align items */
     font-size: var(--font-size-header);
-
-    nav {
-        margin-left: var(--global-margin);
-        h2 {
-            margin-right: var(--global-small-space);
-            margin-top: var(--global-small-space);
-            margin-bottom: var(--global-small-space);
-
-            cursor: pointer;
-            &:hover {
-                color: var(--color-text-hover)
-            }
-        }
-    }
+    /*padding: var(--global-small-space); /* Optional for spacing */
 }
+
+.left-nav {
+    /* margin-left: var(--global-margin); */
+}
+
+.left-nav h2 {
+    margin-right: var(--global-small-space);
+    margin-top: var(--global-small-space);
+    margin-bottom: var(--global-small-space);
+    cursor: pointer;
+}
+
+.left-nav h2:hover {
+    color: var(--color-text-hover);
+}
+
