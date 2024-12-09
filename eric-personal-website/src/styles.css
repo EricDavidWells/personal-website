@@ -7,7 +7,7 @@
   }
 
 :root {
-    --global-small-space: 40px; /* Set the global margin value */
+    --global-small-space: 20px; /* Set the global margin value */
     --color-base: #F5F4EF;
     --color-text: #000000;
     --color-text-hover: #777;

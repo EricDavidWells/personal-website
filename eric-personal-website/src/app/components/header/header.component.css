@@ -2,19 +2,17 @@
 
 .header {
     display: flex;
-    /* padding-inline: var(--global-small-space); */
-    padding-block: var(--global-small-space);
     background-color: var(--color-base);
     color: var(--color-text);
-    align-items: center;
-    justify-content: space-between;
+    align-items: left;
     font-size: var(--font-size-header);
 
     nav {
         margin-left: var(--global-margin);
-
-        span {
+        h2 {
             margin-right: var(--global-small-space);
+            margin-top: var(--global-small-space);
+            margin-bottom: var(--global-small-space);
 
             cursor: pointer;
             &:hover {
