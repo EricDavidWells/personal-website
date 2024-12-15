@@ -5,4 +5,18 @@
         You can download my <a href="assets/resume.pdf">resume</a> here to see more details on my work experience, and please check out my project portfolio.
     </p>
 
+    <div id="carouselExampleControls" class="carousel slide" data-ride="carousel">
+
+        <div class="carousel-inner" role="listbox">
+            <div class="image-container">
+                <img src="{{ showSlide(slides, i) }}" alt="slide" >
+            </div>
+        </div>
+      
+        <div class="button-container">
+            <button class="carousel-button" (click)="getPrev(slides, i)">Prev</button>
+            <button class="carousel-button" (click)="getNext(slides, i)">Next</button>
+        </div>
+    </div>
+
 </div>

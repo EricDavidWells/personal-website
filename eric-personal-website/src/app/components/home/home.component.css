@@ -1,0 +1,39 @@
+.button-container {
+    display: flex;
+    justify-content: center; /* Center horizontally */
+    gap: 20px; /* Space between buttons */
+    margin-top: 20px; /* Optional spacing above */
+  }
+  
+  .carousel-button {
+    padding: 10px 20px;
+    background-color: var(--color-base);
+    color: var(--color-text);
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+  }
+  
+  .carousel-button:hover {
+    background-color: var(--color-text-hover);
+    transform: translateY(-2px);
+  }
+  
+  .carousel-button:active {
+    background-color: var(--color-primary-active);
+    transform: translateY(0);
+  }
+
+.image-container {
+    display: flex;
+    flex: 1;
+    justify-content: center; /* Centers horizontally */
+    align-items: center;    /* Centers vertically */
+}
+
+.image-container img {
+    height: 100%;
+    max-height: 500px;
+}
