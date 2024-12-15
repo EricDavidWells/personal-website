@@ -1,11 +1,11 @@
 .header {
     display: flex;
-    justify-content: space-between; /* Align left and right sections */
+    justify-content: flex-start; /* Align left and right sections */
     background-color: var(--color-base);
     color: var(--color-text);
     align-items: center; /* Vertically align items */
     font-size: var(--font-size-header);
-    /*padding: var(--global-small-space); /* Optional for spacing */
+    gap: var(--global-small-space); /* Add space between the tags */
 }
 
 .left-nav {

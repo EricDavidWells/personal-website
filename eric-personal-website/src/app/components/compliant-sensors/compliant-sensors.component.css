@@ -29,3 +29,10 @@
     display: block;
     align-content: center;
 }
+
+.image-container video {
+    width: 100%;
+    height: auto;
+    display: block;
+    margin-bottom: 10px; /* Space between video and title */
+}

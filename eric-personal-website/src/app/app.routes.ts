@@ -64,4 +64,18 @@ export const routes: Routes = [
             return import('./components/multi-myo/multi-myo.component').then((m) => m.MultiMyoComponent )
         }
     },
+    {
+        path: 'projects/humanoid-teleoperation',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/humanoid-teleoperation/humanoid-teleoperation.component').then((m) => m.HumanoidTeleoperationComponent)
+        }
+    },
+    {
+        path: 'projects',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/projects/projects.component').then((m) => m.ProjectsComponent)
+        }
+    },
 ];

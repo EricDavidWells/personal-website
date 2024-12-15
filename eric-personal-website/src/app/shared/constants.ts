@@ -2,6 +2,13 @@ import { Project } from './project';
 
 export const PROJECTS: Project[] = [
   new Project(
+    'humanoid-teleoperation',
+    'Humanoid Teleoperation',
+    '2024-12',
+    'assets/images/humanoid-teleoperation/humanoid-teleoperation-icon.png',
+    `Teleoperating humanoid robots at Sanctuary AI`
+  ),
+  new Project(
     'multi-myo',
     'Multi-Myosharp',
     '2021-02',
