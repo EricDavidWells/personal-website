@@ -78,4 +78,11 @@ export const routes: Routes = [
             return import('./components/projects/projects.component').then((m) => m.ProjectsComponent)
         }
     },
+    {
+        path: 'projects/emg-pattern-rec',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/emg-pattern-rec/emg-pattern-rec.component').then((m) => m.EmgPatternRecComponent)
+        }
+    },
 ];

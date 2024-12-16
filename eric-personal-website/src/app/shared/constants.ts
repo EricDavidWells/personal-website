@@ -6,7 +6,14 @@ export const PROJECTS: Project[] = [
     'Humanoid Teleoperation',
     '2024-12',
     'assets/images/humanoid-teleoperation/humanoid-teleoperation-icon.png',
-    `Teleoperating humanoid robots at Sanctuary AI`
+    `Teleoperating humanoid robots at Sanctuary AI.`
+  ),
+  new Project(
+    'emg-pattern-rec',
+    'EMG Pattern Recognition',
+    '2021-12',
+    'assets/images/emg-pattern-rec/emg-pattern-rec-icon.png',
+    `Electro-myography based pattern recognition for upper limb prosthesis control.`
   ),
   new Project(
     'multi-myo',
