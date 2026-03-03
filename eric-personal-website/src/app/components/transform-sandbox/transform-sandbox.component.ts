@@ -6,7 +6,20 @@ import { Project } from '../../shared/project';
 import { PROJECTS } from '../../shared/constants';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+
+const DEFAULT_TRANSFORM_CODE = `function transform() {
+  // Available:
+  //   THREE  (Matrix4, Vector3, Quaternion, Euler, MathUtils)
+  //   Math   (cos, sin, PI, etc.)
+  //   getWorldTransform("frame_name")  -> Matrix4
+  
+  const T = new THREE.Matrix4();
+  T.makeRotationZ(Math.PI / 4);
+  T.setPosition(1, 0, 0.5);
+  return T;
+}`;
 
 export interface CoordinateFrame {
   id: string;
@@ -16,6 +29,8 @@ export interface CoordinateFrame {
   axesLength: number;
   lineRadius: number;
   parentId: string | null;
+  transformCode: string;
+  transformMode: 'simple' | 'code';
 }
 
 interface FrameSceneObject {
@@ -43,11 +58,17 @@ interface AnimationState {
 })
 export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('sceneContainer', { static: false }) sceneContainer!: ElementRef<HTMLDivElement>;
+  @ViewChild('sandboxLayout', { static: false }) sandboxLayout!: ElementRef<HTMLDivElement>;
 
   project: Project | undefined;
   frames: CoordinateFrame[] = [];
   selectedFrameId: string | null = null;
   animationDuration = 1.0;
+  codeError: string | null = null;
+  dragOverIndex: number | null = null;
+  gizmoEnabled = true;
+  gizmoMode: 'translate' | 'rotate' = 'translate';
+  private dragFromIndex: number | null = null;
 
   private isBrowser: boolean;
   private scene!: THREE.Scene;
@@ -55,7 +76,9 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
   private renderer!: THREE.WebGLRenderer;
   private labelRenderer!: CSS2DRenderer;
   private controls!: OrbitControls;
+  private gizmo!: TransformControls;
   private frameObjects = new Map<string, FrameSceneObject>();
+  private compiledCode = new Map<string, { code: string; fn: Function }>();
   private animationState: AnimationState | null = null;
   private animFrameId = 0;
   private resizeObserver!: ResizeObserver;
@@ -92,6 +115,8 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
     if (!this.isBrowser) return;
     cancelAnimationFrame(this.animFrameId);
     this.resizeObserver?.disconnect();
+    this.gizmo?.detach();
+    this.gizmo?.dispose();
     this.controls?.dispose();
     this.renderer?.dispose();
     this.labelRenderer?.domElement.remove();
@@ -113,10 +138,13 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
       axesLength: 1,
       lineRadius: 0.02,
       parentId: null,
+      transformCode: DEFAULT_TRANSFORM_CODE,
+      transformMode: 'simple',
     };
     this.frames.push(frame);
     this.addFrameToScene(frame);
     this.selectedFrameId = id;
+    this.updateGizmos();
   }
 
   removeFrame(id: string): void {
@@ -128,23 +156,189 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
 
     this.frames = this.frames.filter(f => f.id !== id);
     this.removeFrameFromScene(id);
+    this.compiledCode.delete(id);
 
     if (this.selectedFrameId === id) {
       this.selectedFrameId = this.frames.length > 0 ? this.frames[0].id : null;
     }
+    this.updateGizmos();
   }
 
   selectFrame(id: string): void {
     this.selectedFrameId = id;
+    this.updateGizmos();
   }
 
   onFramePropertyChange(frame: CoordinateFrame): void {
     this.updateFrameInScene(frame);
   }
 
+  onModeChange(frame: CoordinateFrame, mode: 'simple' | 'code'): void {
+    if (frame.transformMode === 'code' && mode === 'simple') {
+      const obj = this.frameObjects.get(frame.id);
+      if (obj) {
+        const pos = obj.group.position;
+        const euler = new THREE.Euler().setFromQuaternion(obj.group.quaternion);
+        frame.position = { x: pos.x, y: pos.y, z: pos.z };
+        frame.rotation = {
+          x: THREE.MathUtils.radToDeg(euler.x),
+          y: THREE.MathUtils.radToDeg(euler.y),
+          z: THREE.MathUtils.radToDeg(euler.z),
+        };
+      }
+    }
+    frame.transformMode = mode;
+    this.codeError = null;
+    this.updateGizmos();
+  }
+
+  onGizmoEnabledChange(): void {
+    this.updateGizmos();
+  }
+
+  onGizmoModeChange(mode: 'translate' | 'rotate'): void {
+    this.gizmoMode = mode;
+    if (this.gizmo) this.gizmo.setMode(mode);
+  }
+
   onParentChange(frame: CoordinateFrame): void {
     this.reparentInScene(frame);
     this.updateFrameInScene(frame);
+  }
+
+  onDragStart(index: number): void {
+    this.dragFromIndex = index;
+  }
+
+  onDragOver(event: DragEvent, index: number): void {
+    event.preventDefault();
+    this.dragOverIndex = index;
+  }
+
+  onDragLeave(): void {
+    this.dragOverIndex = null;
+  }
+
+  onDrop(toIndex: number): void {
+    if (this.dragFromIndex !== null && this.dragFromIndex !== toIndex) {
+      const [moved] = this.frames.splice(this.dragFromIndex, 1);
+      this.frames.splice(toIndex, 0, moved);
+    }
+    this.dragFromIndex = null;
+    this.dragOverIndex = null;
+  }
+
+  onDragEnd(): void {
+    this.dragFromIndex = null;
+    this.dragOverIndex = null;
+  }
+
+  onDividerMouseDown(event: MouseEvent): void {
+    event.preventDefault();
+    const layout = this.sandboxLayout.nativeElement;
+    const scene = this.sceneContainer.nativeElement;
+
+    const onMouseMove = (e: MouseEvent) => {
+      const layoutRect = layout.getBoundingClientRect();
+      const sceneWidth = e.clientX - layoutRect.left - 12;
+      const minWidth = 200;
+      const maxWidth = layoutRect.width - minWidth - 30;
+      scene.style.flex = 'none';
+      scene.style.width = Math.max(minWidth, Math.min(maxWidth, sceneWidth)) + 'px';
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  private updateGizmos(): void {
+    if (!this.gizmo) return;
+
+    const frame = this.selectedFrame;
+    const obj = frame ? this.frameObjects.get(frame.id) : undefined;
+    const shouldAttach = !!(frame && obj && frame.transformMode === 'simple' && this.gizmoEnabled);
+
+    if (shouldAttach) {
+      this.gizmo.attach(obj!.group);
+    } else {
+      this.gizmo.detach();
+    }
+  }
+
+  private syncGizmoToModel(): void {
+    const frame = this.selectedFrame;
+    if (!frame) return;
+    const obj = this.frameObjects.get(frame.id);
+    if (!obj) return;
+
+    const pos = obj.group.position;
+    const euler = new THREE.Euler().setFromQuaternion(obj.group.quaternion);
+    frame.position = { x: pos.x, y: pos.y, z: pos.z };
+    frame.rotation = {
+      x: THREE.MathUtils.radToDeg(euler.x),
+      y: THREE.MathUtils.radToDeg(euler.y),
+      z: THREE.MathUtils.radToDeg(euler.z),
+    };
+  }
+
+  private evalTransformCode(frame: CoordinateFrame): THREE.Matrix4 | null {
+    const getWorldTransform = (name: string): THREE.Matrix4 => {
+      const target = this.frames.find(f => f.name === name);
+      if (!target) throw new Error(`Frame "${name}" not found`);
+      const obj = this.frameObjects.get(target.id);
+      if (!obj) throw new Error(`Frame "${name}" has no scene object`);
+      obj.group.updateWorldMatrix(true, false);
+      return obj.group.matrixWorld.clone();
+    };
+
+    let cached = this.compiledCode.get(frame.id);
+    if (!cached || cached.code !== frame.transformCode) {
+      const fn = new Function('THREE', 'Math', 'getWorldTransform', frame.transformCode + '\nreturn transform();');
+      cached = { code: frame.transformCode, fn };
+      this.compiledCode.set(frame.id, cached);
+    }
+
+    const result = cached.fn(THREE, Math, getWorldTransform);
+    if (!(result instanceof THREE.Matrix4)) {
+      this.codeError = 'Code must return a THREE.Matrix4';
+      return null;
+    }
+    return result;
+  }
+
+  private evaluateLiveCodeFrames(): void {
+    for (const frame of this.frames) {
+      if (frame.transformMode !== 'code') continue;
+      if (this.animationState?.frameId === frame.id) continue;
+      const isSelected = frame.id === this.selectedFrameId;
+      try {
+        const result = this.evalTransformCode(frame);
+        if (!result) continue;
+
+        const obj = this.frameObjects.get(frame.id);
+        if (!obj) continue;
+
+        const pos = new THREE.Vector3();
+        const quat = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        result.decompose(pos, quat, scale);
+
+        obj.group.position.copy(pos);
+        obj.group.quaternion.copy(quat);
+        if (isSelected) this.codeError = null;
+      } catch (e: any) {
+        if (isSelected) this.codeError = e.message || String(e);
+      }
+    }
   }
 
   exportScene(): void {
@@ -194,6 +388,7 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
       }
       this.selectedFrameId = this.frames.length > 0 ? this.frames[0].id : null;
       this.nextFrameNumber = this.frames.length + 1;
+      this.updateGizmos();
       input.value = '';
     });
   }
@@ -201,10 +396,12 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
   private clearScene(): void {
     this.animationState = null;
     this.selectedFrameId = null;
+    this.updateGizmos();
     [...this.frames].forEach(f => {
       this.removeFrameFromScene(f.id);
     });
     this.frames = [];
+    this.compiledCode.clear();
   }
 
   animateFromParent(): void {
@@ -269,6 +466,12 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
+    this.controls.mouseButtons = {
+      LEFT: null as any,
+      MIDDLE: THREE.MOUSE.PAN,
+      RIGHT: THREE.MOUSE.ROTATE,
+    };
+    this.controls.zoomToCursor = true;
 
     // Grid on the XY plane (Z-up)
     const grid = new THREE.GridHelper(10, 10, 0x444466, 0x333355);
@@ -285,6 +488,16 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
     dirLight.position.set(5, -5, 10);
     this.scene.add(dirLight);
 
+    this.gizmo = new TransformControls(this.camera, this.renderer.domElement);
+    this.gizmo.setMode(this.gizmoMode);
+    this.gizmo.setSpace('local');
+    this.scene.add(this.gizmo.getHelper());
+
+    this.gizmo.addEventListener('dragging-changed', (event: any) => {
+      this.controls.enabled = !event.value;
+    });
+    this.gizmo.addEventListener('objectChange', () => this.syncGizmoToModel());
+
     this.resizeObserver = new ResizeObserver(() => this.onResize());
     this.resizeObserver.observe(container);
     this.onResize();
@@ -297,6 +510,7 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
       this.tickAnimation();
     }
 
+    this.evaluateLiveCodeFrames();
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
@@ -334,8 +548,9 @@ export class TransformSandboxComponent implements OnInit, AfterViewInit, OnDestr
         const parentWorldPos = new THREE.Vector3();
         parent.getWorldPosition(parentWorldPos);
 
-        const localPos = pos.clone().sub(parentWorldPos).applyQuaternion(parentWorldQuat.invert());
-        const localQuat = parentWorldQuat.clone().invert().multiply(quat);
+        const parentWorldQuatInv = parentWorldQuat.clone().invert();
+        const localPos = pos.clone().sub(parentWorldPos).applyQuaternion(parentWorldQuatInv);
+        const localQuat = parentWorldQuatInv.clone().multiply(quat);
 
         obj.group.position.copy(localPos);
         obj.group.quaternion.copy(localQuat);

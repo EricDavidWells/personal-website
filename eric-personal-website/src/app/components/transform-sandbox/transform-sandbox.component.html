@@ -1,6 +1,6 @@
-<div class="sandbox-layout">
+<div class="sandbox-layout" #sandboxLayout>
     <div class="scene-panel" #sceneContainer></div>
-
+    <div class="divider" (mousedown)="onDividerMouseDown($event)"></div>
     <div class="control-panel">
         <h2>{{ project?.title }}</h2>
 
@@ -12,10 +12,17 @@
         </div>
 
         <div class="frame-list">
-            @for (frame of frames; track frame.id) {
+            @for (frame of frames; track frame.id; let i = $index) {
                 <div
                     class="frame-list-item"
                     [class.selected]="frame.id === selectedFrameId"
+                    [class.drag-over]="dragOverIndex === i"
+                    draggable="true"
+                    (dragstart)="onDragStart(i)"
+                    (dragover)="onDragOver($event, i)"
+                    (dragleave)="onDragLeave()"
+                    (drop)="onDrop(i)"
+                    (dragend)="onDragEnd()"
                     (click)="selectFrame(frame.id)">
                     <span class="frame-name">{{ frame.name }}</span>
                     <button class="remove-btn" (click)="removeFrame(frame.id); $event.stopPropagation()" [disabled]="isAnimating">×</button>
@@ -34,49 +41,17 @@
                         (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
                 </label>
 
-                <fieldset>
-                    <legend>Position</legend>
-                    <label>
-                        X
-                        <input type="number" step="0.1"
-                            [(ngModel)]="selectedFrame.position.x"
-                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
-                    </label>
-                    <label>
-                        Y
-                        <input type="number" step="0.1"
-                            [(ngModel)]="selectedFrame.position.y"
-                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
-                    </label>
-                    <label>
-                        Z
-                        <input type="number" step="0.1"
-                            [(ngModel)]="selectedFrame.position.z"
-                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
-                    </label>
-                </fieldset>
-
-                <fieldset>
-                    <legend>Rotation (degrees)</legend>
-                    <label>
-                        X
-                        <input type="number" step="5"
-                            [(ngModel)]="selectedFrame.rotation.x"
-                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
-                    </label>
-                    <label>
-                        Y
-                        <input type="number" step="5"
-                            [(ngModel)]="selectedFrame.rotation.y"
-                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
-                    </label>
-                    <label>
-                        Z
-                        <input type="number" step="5"
-                            [(ngModel)]="selectedFrame.rotation.z"
-                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
-                    </label>
-                </fieldset>
+                <label>
+                    Parent
+                    <select
+                        [(ngModel)]="selectedFrame.parentId"
+                        (ngModelChange)="onParentChange(selectedFrame!)">
+                        <option [ngValue]="null">World (root)</option>
+                        @for (parent of availableParents; track parent.id) {
+                            <option [ngValue]="parent.id">{{ parent.name }}</option>
+                        }
+                    </select>
+                </label>
 
                 <fieldset>
                     <legend>Axes</legend>
@@ -94,17 +69,98 @@
                     </label>
                 </fieldset>
 
-                <label>
-                    Parent
-                    <select
-                        [(ngModel)]="selectedFrame.parentId"
-                        (ngModelChange)="onParentChange(selectedFrame!)">
-                        <option [ngValue]="null">World (root)</option>
-                        @for (parent of availableParents; track parent.id) {
-                            <option [ngValue]="parent.id">{{ parent.name }}</option>
+                <div class="mode-toggle">
+                    <button
+                        [class.active]="selectedFrame.transformMode === 'simple'"
+                        (click)="onModeChange(selectedFrame!, 'simple')">
+                        Simple
+                    </button>
+                    <button
+                        [class.active]="selectedFrame.transformMode === 'code'"
+                        (click)="onModeChange(selectedFrame!, 'code')">
+                        Code
+                    </button>
+                </div>
+
+                @if (selectedFrame.transformMode === 'simple') {
+                    <div class="gizmo-controls">
+                        <label class="gizmo-toggle">
+                            <input type="checkbox"
+                                [(ngModel)]="gizmoEnabled"
+                                (ngModelChange)="onGizmoEnabledChange()" />
+                            Interactive
+                        </label>
+                        @if (gizmoEnabled) {
+                            <div class="mode-toggle">
+                                <button
+                                    [class.active]="gizmoMode === 'translate'"
+                                    (click)="onGizmoModeChange('translate')">
+                                    Translate
+                                </button>
+                                <button
+                                    [class.active]="gizmoMode === 'rotate'"
+                                    (click)="onGizmoModeChange('rotate')">
+                                    Rotate
+                                </button>
+                            </div>
                         }
-                    </select>
-                </label>
+                    </div>
+                    <fieldset>
+                        <legend>Position</legend>
+                        <label>
+                            X
+                            <input type="number" step="0.1"
+                                [(ngModel)]="selectedFrame.position.x"
+                                (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                        </label>
+                        <label>
+                            Y
+                            <input type="number" step="0.1"
+                                [(ngModel)]="selectedFrame.position.y"
+                                (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                        </label>
+                        <label>
+                            Z
+                            <input type="number" step="0.1"
+                                [(ngModel)]="selectedFrame.position.z"
+                                (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                        </label>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Rotation (degrees)</legend>
+                        <label>
+                            X
+                            <input type="number" step="5"
+                                [(ngModel)]="selectedFrame.rotation.x"
+                                (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                        </label>
+                        <label>
+                            Y
+                            <input type="number" step="5"
+                                [(ngModel)]="selectedFrame.rotation.y"
+                                (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                        </label>
+                        <label>
+                            Z
+                            <input type="number" step="5"
+                                [(ngModel)]="selectedFrame.rotation.z"
+                                (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                        </label>
+                    </fieldset>
+                }
+
+                @if (selectedFrame.transformMode === 'code') {
+                    <fieldset>
+                        <legend>Transform Code (JS)</legend>
+                        <textarea class="code-editor"
+                            [(ngModel)]="selectedFrame.transformCode"
+                            spellcheck="false"></textarea>
+                        @if (codeError) {
+                            <div class="code-error">{{ codeError }}</div>
+                        }
+                    </fieldset>
+                }
 
                 <fieldset>
                     <legend>Animate</legend>

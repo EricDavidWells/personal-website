@@ -1,22 +1,39 @@
 .sandbox-layout {
     display: flex;
-    width: 100%;
-    height: 80vh;
-    max-width: var(--max-width-wide);
-    margin: var(--global-margin);
+    width: 100vw;
+    height: 95vh;
+    max-width: 100%;
+    margin: 0;
+    padding: 12px;
     gap: 12px;
+    box-sizing: border-box;
 }
 
 .scene-panel {
     position: relative;
-    flex: 3;
-    min-width: 0;
+    width: var(--max-width-wide);
+    flex: none;
+    min-width: 200px;
     border-radius: 6px;
     overflow: hidden;
 }
 
+.divider {
+    width: 6px;
+    cursor: col-resize;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.divider:hover {
+    background: rgba(0, 0, 0, 0.3);
+}
+
 .control-panel {
-    flex: 2;
+    flex: 1;
+    min-width: 200px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -80,6 +97,10 @@ button:disabled {
 
 .frame-list-item:hover {
     background: rgba(0, 0, 0, 0.05);
+}
+
+.frame-list-item.drag-over {
+    border-top: 2px solid var(--color-text);
 }
 
 .frame-list-item.selected {
@@ -156,4 +177,75 @@ input[type="text"], select {
 .animate-btn {
     font-size: 12px;
     padding: 4px 10px;
+}
+
+.code-editor {
+    width: 100%;
+    min-height: 180px;
+    font-family: monospace;
+    font-size: 13px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    resize: vertical;
+    tab-size: 2;
+    line-height: 1.4;
+    box-sizing: border-box;
+}
+
+.mode-toggle {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--color-text);
+    border-radius: 4px;
+    overflow: hidden;
+    width: fit-content;
+}
+
+.mode-toggle button {
+    border: none;
+    border-radius: 0;
+    padding: 5px 14px;
+    font-size: 12px;
+    background: var(--color-base);
+    color: var(--color-text);
+    opacity: 0.6;
+}
+
+.mode-toggle button.active {
+    background: var(--color-text);
+    color: var(--color-base);
+    opacity: 1;
+}
+
+.mode-toggle button:hover:not(.active) {
+    opacity: 0.85;
+}
+
+.gizmo-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gizmo-toggle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.gizmo-toggle input[type="checkbox"] {
+    width: auto;
+}
+
+.code-error {
+    color: #cc4444;
+    font-size: 12px;
+    font-family: monospace;
+    word-break: break-word;
+    width: 100%;
 }
