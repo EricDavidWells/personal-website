@@ -2,6 +2,13 @@ import { Project } from './project';
 
 export const PROJECTS: Project[] = [
   new Project(
+    'transform-sandbox',
+    'Transform Sandbox',
+    '2026-03',
+    'assets/images/transform-sandbox-icon.png',
+    `An interactive 3D coordinate frame hierarchy for exploring rotation matrices and transforms.`
+  ),
+  new Project(
     'humanoid-teleoperation',
     'Humanoid Teleoperation',
     '2024-12',

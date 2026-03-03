@@ -1,0 +1,127 @@
+<div class="sandbox-layout">
+    <div class="scene-panel" #sceneContainer></div>
+
+    <div class="control-panel">
+        <h2>{{ project?.title }}</h2>
+
+        <div class="toolbar">
+            <button (click)="addFrame()" [disabled]="isAnimating">+ Add Frame</button>
+            <button (click)="exportScene()" [disabled]="frames.length === 0">Export</button>
+            <button (click)="fileInput.click()">Import</button>
+            <input #fileInput type="file" accept=".json" hidden (change)="importScene($event)" />
+        </div>
+
+        <div class="frame-list">
+            @for (frame of frames; track frame.id) {
+                <div
+                    class="frame-list-item"
+                    [class.selected]="frame.id === selectedFrameId"
+                    (click)="selectFrame(frame.id)">
+                    <span class="frame-name">{{ frame.name }}</span>
+                    <button class="remove-btn" (click)="removeFrame(frame.id); $event.stopPropagation()" [disabled]="isAnimating">×</button>
+                </div>
+            }
+        </div>
+
+        @if (selectedFrame) {
+            <div class="frame-editor">
+                <h3>{{ selectedFrame.name }}</h3>
+
+                <label>
+                    Name
+                    <input type="text"
+                        [(ngModel)]="selectedFrame.name"
+                        (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                </label>
+
+                <fieldset>
+                    <legend>Position</legend>
+                    <label>
+                        X
+                        <input type="number" step="0.1"
+                            [(ngModel)]="selectedFrame.position.x"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                    <label>
+                        Y
+                        <input type="number" step="0.1"
+                            [(ngModel)]="selectedFrame.position.y"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                    <label>
+                        Z
+                        <input type="number" step="0.1"
+                            [(ngModel)]="selectedFrame.position.z"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Rotation (degrees)</legend>
+                    <label>
+                        X
+                        <input type="number" step="5"
+                            [(ngModel)]="selectedFrame.rotation.x"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                    <label>
+                        Y
+                        <input type="number" step="5"
+                            [(ngModel)]="selectedFrame.rotation.y"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                    <label>
+                        Z
+                        <input type="number" step="5"
+                            [(ngModel)]="selectedFrame.rotation.z"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Axes</legend>
+                    <label>
+                        Length
+                        <input type="number" step="0.1" min="0.1" max="10"
+                            [(ngModel)]="selectedFrame.axesLength"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                    <label>
+                        Radius
+                        <input type="number" step="0.005" min="0.005" max="0.5"
+                            [(ngModel)]="selectedFrame.lineRadius"
+                            (ngModelChange)="onFramePropertyChange(selectedFrame!)" />
+                    </label>
+                </fieldset>
+
+                <label>
+                    Parent
+                    <select
+                        [(ngModel)]="selectedFrame.parentId"
+                        (ngModelChange)="onParentChange(selectedFrame!)">
+                        <option [ngValue]="null">World (root)</option>
+                        @for (parent of availableParents; track parent.id) {
+                            <option [ngValue]="parent.id">{{ parent.name }}</option>
+                        }
+                    </select>
+                </label>
+
+                <fieldset>
+                    <legend>Animate</legend>
+                    <div class="animate-controls">
+                        <label>
+                            Duration (s)
+                            <input type="number" step="0.25" min="0.25" max="10"
+                                [(ngModel)]="animationDuration" />
+                        </label>
+                        <button
+                            (click)="animateFromParent()"
+                            [disabled]="isAnimating">
+                            Parent → Frame
+                        </button>
+                    </div>
+                </fieldset>
+            </div>
+        }
+    </div>
+</div>

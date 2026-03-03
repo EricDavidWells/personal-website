@@ -85,4 +85,11 @@ export const routes: Routes = [
             return import('./components/emg-pattern-rec/emg-pattern-rec.component').then((m) => m.EmgPatternRecComponent)
         }
     },
+    {
+        path: 'projects/transform-sandbox',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/transform-sandbox/transform-sandbox.component').then((m) => m.TransformSandboxComponent)
+        }
+    },
 ];
