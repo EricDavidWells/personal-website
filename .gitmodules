@@ -1,0 +1,3 @@
+[submodule "vendor/generic-numerical-inverse-kinematics"]
+	path = vendor/generic-numerical-inverse-kinematics
+	url = git@github.com:EricDavidWells/generic-numerical-inverse-kinematics.git

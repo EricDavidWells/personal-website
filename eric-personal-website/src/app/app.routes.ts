@@ -92,4 +92,11 @@ export const routes: Routes = [
             return import('./components/transform-sandbox/transform-sandbox.component').then((m) => m.TransformSandboxComponent)
         }
     },
+    {
+        path: 'projects/generic-ik',
+        pathMatch: 'full',
+        loadComponent: () => {
+            return import('./components/generic-ik/generic-ik.component').then((m) => m.GenericIkComponent)
+        }
+    },
 ];

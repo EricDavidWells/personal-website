@@ -1,0 +1,50 @@
+diff --git a/.gitmodules b/.gitmodules
+new file mode 100644
+index 0000000..3a6d42a
+--- /dev/null
++++ b/.gitmodules
+@@ -0,0 +1,3 @@
++[submodule "vendor/generic-numerical-inverse-kinematics"]
++	path = vendor/generic-numerical-inverse-kinematics
++	url = git@github.com:EricDavidWells/generic-numerical-inverse-kinematics.git
+diff --git a/eric-personal-website/src/app/app.routes.ts b/eric-personal-website/src/app/app.routes.ts
+index 63ab54a..7ac423e 100644
+--- a/eric-personal-website/src/app/app.routes.ts
++++ b/eric-personal-website/src/app/app.routes.ts
+@@ -92,4 +92,11 @@ export const routes: Routes = [
+             return import('./components/transform-sandbox/transform-sandbox.component').then((m) => m.TransformSandboxComponent)
+         }
+     },
++    {
++        path: 'projects/generic-ik',
++        pathMatch: 'full',
++        loadComponent: () => {
++            return import('./components/generic-ik/generic-ik.component').then((m) => m.GenericIkComponent)
++        }
++    },
+ ];
+diff --git a/eric-personal-website/src/app/shared/constants.ts b/eric-personal-website/src/app/shared/constants.ts
+index 9e79de5..dcc30aa 100644
+--- a/eric-personal-website/src/app/shared/constants.ts
++++ b/eric-personal-website/src/app/shared/constants.ts
+@@ -1,6 +1,13 @@
+ import { Project } from './project';
+ 
+ export const PROJECTS: Project[] = [
++  new Project(
++    'generic-ik',
++    'Generic IK Kinematics Viewer',
++    '2026-03',
++    'assets/images/transform-sandbox-icon.png',
++    `Interactive visualization of a UR5 robot arm using forward kinematics compiled from C++ to WebAssembly.`
++  ),
+   new Project(
+     'transform-sandbox',
+     'Transform Sandbox',
+diff --git a/vendor/generic-numerical-inverse-kinematics b/vendor/generic-numerical-inverse-kinematics
+new file mode 160000
+index 0000000..fc458fe
+--- /dev/null
++++ b/vendor/generic-numerical-inverse-kinematics
+@@ -0,0 +1 @@
++Subproject commit fc458feca754535a64230e3e52265a72ad91d2af

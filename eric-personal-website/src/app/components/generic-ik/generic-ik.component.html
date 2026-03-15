@@ -1,0 +1,39 @@
+<div class="viewer-layout" #viewerLayout>
+    <div class="scene-panel" #sceneContainer></div>
+    <div class="divider" (mousedown)="onDividerMouseDown($event)"></div>
+    <div class="control-panel">
+        <h2>{{ project?.title }}</h2>
+
+        @if (loading) {
+            <div class="status-message">Loading kinematics module...</div>
+        }
+
+        @if (errorMessage) {
+            <div class="error-message">{{ errorMessage }}</div>
+        }
+
+        @if (!loading && !errorMessage) {
+            <fieldset>
+                <legend>Joint Angles</legend>
+                @for (joint of joints; track joint.name) {
+                    <div class="joint-control">
+                        <div class="joint-header">
+                            <span class="joint-name">{{ joint.name }}</span>
+                            <span class="joint-value">{{ radToDeg(joint.value) | number:'1.1-1' }}&deg;</span>
+                        </div>
+                        <input type="range"
+                            [min]="joint.lower"
+                            [max]="joint.upper"
+                            step="0.01"
+                            [(ngModel)]="joint.value"
+                            (ngModelChange)="onJointChange()" />
+                        <div class="joint-limits">
+                            <span>{{ radToDeg(joint.lower) | number:'1.0-0' }}&deg;</span>
+                            <span>{{ radToDeg(joint.upper) | number:'1.0-0' }}&deg;</span>
+                        </div>
+                    </div>
+                }
+            </fieldset>
+        }
+    </div>
+</div>
