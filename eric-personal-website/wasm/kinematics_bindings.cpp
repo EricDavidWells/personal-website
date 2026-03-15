@@ -102,6 +102,16 @@ std::vector<JointInfo> get_joint_info(const Tree & tree)
   return info;
 }
 
+double get_position_manipulability(
+    const Tree& tree,
+    const std::string& tip_name,
+    const std::string& base_name,
+    const std::vector<std::string>& joint_names)
+{
+    auto manip_pair = tree.manipulability(tip_name, base_name, joint_names);
+    return manip_pair.first;  // Return position manipulability only
+}
+
 EMSCRIPTEN_BINDINGS(kinematics_module)
 {
   register_vector<std::string>("StringVector");
@@ -129,4 +139,5 @@ EMSCRIPTEN_BINDINGS(kinematics_module)
   function("getJointLimits", &get_joint_limits);
   function("getLinkNames", &get_link_names);
   function("getJointInfo", &get_joint_info);
+  function("getPositionManipulability", &get_position_manipulability);
 }

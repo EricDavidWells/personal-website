@@ -31,6 +31,27 @@ interface KinematicsModule {
   getJointLimits(tree: any, jointName: string): any;
   getLinkNames(tree: any): any;
   getJointInfo(tree: any): any;
+  getPositionManipulability(
+    tree: any,
+    tipName: string,
+    baseName: string,
+    jointNames: any
+  ): number;
+  StringVector: any;
+}
+
+interface MonteCarloPoint {
+  position: THREE.Vector3;
+  manipulability: number;
+  jointConfig: number[];
+}
+
+interface PointCloudVisualization {
+  points: THREE.Points;
+  geometry: THREE.BufferGeometry;
+  material: THREE.PointsMaterial;
+  data: MonteCarloPoint[];
+  visible: boolean;
 }
 
 const LINK_COLORS = [
@@ -61,11 +82,33 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   private animFrameId = 0;
   private resizeObserver!: ResizeObserver;
 
-  private wasmModule: KinematicsModule | null = null;
+  wasmModule: KinematicsModule | null = null;
   private kinematicTree: any = null;
   private linkGroups = new Map<string, THREE.Group>();
   private linkMeshes = new Map<string, THREE.Mesh>();
   private jointInfoList: JointInfo[] = [];
+
+  pointCloud: PointCloudVisualization | null = null;
+  manipulabilityRange = { min: Infinity, max: -Infinity };
+
+  // Clipping planes
+  private plane1: THREE.Mesh | null = null;
+  private plane2: THREE.Mesh | null = null;
+  private arrow1: THREE.ArrowHelper | null = null;
+  private arrow2: THREE.ArrowHelper | null = null;
+  private raycaster = new THREE.Raycaster();
+  private mouse = new THREE.Vector2();
+  private dragArrow: THREE.ArrowHelper | null = null;
+  private dragStartZ = 0;
+  private dragStartMouseY = 0;
+
+  // UI controls
+  showPointCloud = false;
+  pointCloudCount = 200;
+  isGeneratingPointCloud = false;
+  pointCloudProgress = 0;
+  showClippingPlanes = false;
+  enablePlaneFiltering = false;
 
   constructor(@Inject(PLATFORM_ID) platformId: Object) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -90,6 +133,33 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.renderer?.dispose();
     this.labelRenderer?.domElement.remove();
     this.linkGroups.forEach(group => group.removeFromParent());
+
+    // Clean up point cloud
+    if (this.pointCloud) {
+      this.scene.remove(this.pointCloud.points);
+      this.pointCloud.geometry.dispose();
+      this.pointCloud.material.dispose();
+    }
+
+    // Clean up clipping planes
+    if (this.plane1) {
+      this.scene.remove(this.plane1);
+      (this.plane1.material as THREE.Material).dispose();
+      this.plane1.geometry.dispose();
+    }
+    if (this.plane2) {
+      this.scene.remove(this.plane2);
+      (this.plane2.material as THREE.Material).dispose();
+      this.plane2.geometry.dispose();
+    }
+    if (this.arrow1) {
+      this.scene.remove(this.arrow1);
+      this.arrow1.dispose();
+    }
+    if (this.arrow2) {
+      this.scene.remove(this.arrow2);
+      this.arrow2.dispose();
+    }
   }
 
   onJointChange(): void {
@@ -351,6 +421,135 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resizeObserver = new ResizeObserver(() => this.onResize());
     this.resizeObserver.observe(container);
     this.onResize();
+
+    this.initClippingPlanes();
+  }
+
+  private initClippingPlanes(): void {
+    // Create two semi-transparent planes
+    const planeGeometry = new THREE.PlaneGeometry(2, 2);
+    const planeMaterial1 = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+    const planeMaterial2 = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+
+    this.plane1 = new THREE.Mesh(planeGeometry, planeMaterial1);
+    this.plane1.position.set(0, 0, 0.2);
+    this.plane1.visible = false;
+    this.scene.add(this.plane1);
+
+    this.plane2 = new THREE.Mesh(planeGeometry, planeMaterial2);
+    this.plane2.position.set(0, 0, 0.6);
+    this.plane2.visible = false;
+    this.scene.add(this.plane2);
+
+    // Create arrows for dragging (pointing up along Z-axis)
+    const direction = new THREE.Vector3(0, 0, 1);
+    const origin1 = new THREE.Vector3(0, 0, 0);
+    const origin2 = new THREE.Vector3(0, 0, 0);
+    const length = 0.4;
+    const headLength = 0.15;
+    const headWidth = 0.1;
+
+    this.arrow1 = new THREE.ArrowHelper(direction, origin1, length, 0x00ff00, headLength, headWidth);
+    this.arrow1.visible = false;
+    this.arrow1.position.copy(this.plane1.position);
+    this.scene.add(this.arrow1);
+
+    this.arrow2 = new THREE.ArrowHelper(direction, origin2, length, 0xff0000, headLength, headWidth);
+    this.arrow2.visible = false;
+    this.arrow2.position.copy(this.plane2.position);
+    this.scene.add(this.arrow2);
+
+    // Add mouse event listeners for dragging arrows
+    const canvas = this.renderer.domElement;
+
+    canvas.addEventListener('mousedown', (event) => this.onArrowMouseDown(event), false);
+    canvas.addEventListener('mousemove', (event) => this.onArrowMouseMove(event), false);
+    canvas.addEventListener('mouseup', () => this.onArrowMouseUp(), false);
+    canvas.addEventListener('contextmenu', (event) => event.preventDefault(), false);
+  }
+
+  private onArrowMouseDown(event: MouseEvent): void {
+    // Only respond to left-click
+    if (event.button !== 0) return;
+    if (!this.showClippingPlanes) return;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // Check intersections with arrow cones only (the head)
+    const arrowObjects: THREE.Object3D[] = [];
+    if (this.arrow1) {
+      // Only add the cone (first child is the line, second is the cone)
+      const cone = this.arrow1.children.find(child => child.type === 'Mesh');
+      if (cone) arrowObjects.push(cone);
+    }
+    if (this.arrow2) {
+      const cone = this.arrow2.children.find(child => child.type === 'Mesh');
+      if (cone) arrowObjects.push(cone);
+    }
+
+    const intersects = this.raycaster.intersectObjects(arrowObjects, false);
+
+    if (intersects.length > 0) {
+      // Find which arrow was clicked
+      const clickedObject = intersects[0].object;
+      if (this.arrow1?.children.includes(clickedObject)) {
+        this.dragArrow = this.arrow1;
+      } else if (this.arrow2?.children.includes(clickedObject)) {
+        this.dragArrow = this.arrow2;
+      }
+
+      if (this.dragArrow) {
+        this.dragStartZ = this.dragArrow.position.z;
+        this.dragStartMouseY = this.mouse.y;
+        this.controls.enabled = false;
+        event.preventDefault();
+      }
+    }
+  }
+
+  private onArrowMouseMove(event: MouseEvent): void {
+    if (!this.dragArrow) return;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Map mouse Y movement to Z-axis movement
+    const deltaMouseY = this.mouse.y - this.dragStartMouseY;
+    const newZ = this.dragStartZ + deltaMouseY * 2; // Scale factor for sensitivity
+
+    // Update arrow and corresponding plane position
+    this.dragArrow.position.z = newZ;
+
+    if (this.dragArrow === this.arrow1 && this.plane1) {
+      this.plane1.position.z = newZ;
+    } else if (this.dragArrow === this.arrow2 && this.plane2) {
+      this.plane2.position.z = newZ;
+    }
+
+    if (this.enablePlaneFiltering) {
+      this.updatePointCloudFiltering();
+    }
+  }
+
+  private onArrowMouseUp(): void {
+    if (this.dragArrow) {
+      this.dragArrow = null;
+      this.controls.enabled = true;
+    }
   }
 
   private animate(): void {
@@ -402,6 +601,244 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     const label = new CSS2DObject(div);
     label.position.set(0, 0.08, 0);
     return label;
+  }
+
+  private createPointCloudVisualization(mcPoints: MonteCarloPoint[]): void {
+    // Clean up existing
+    if (this.pointCloud) {
+      this.scene.remove(this.pointCloud.points);
+      this.pointCloud.geometry.dispose();
+      this.pointCloud.material.dispose();
+    }
+
+    const positions: number[] = [];
+    const colors: number[] = [];
+
+    for (const mcPoint of mcPoints) {
+      positions.push(mcPoint.position.x, mcPoint.position.y, mcPoint.position.z);
+
+      // Color mapping: Blue (high manip) → Red (low manip/singularities)
+      const color = this.manipulabilityToColor(
+        mcPoint.manipulability,
+        this.manipulabilityRange.min,
+        this.manipulabilityRange.max
+      );
+      colors.push(color.r, color.g, color.b);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.015,
+      vertexColors: true,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false
+    });
+
+    const points = new THREE.Points(geometry, material);
+    points.visible = this.showPointCloud;
+    this.scene.add(points);
+
+    this.pointCloud = { points, geometry, material, data: mcPoints, visible: this.showPointCloud };
+
+    // Apply filtering if enabled
+    if (this.enablePlaneFiltering) {
+      this.updatePointCloudFiltering();
+    }
+  }
+
+  private updatePointCloudFiltering(): void {
+    if (!this.pointCloud || !this.enablePlaneFiltering || !this.plane1 || !this.plane2) return;
+
+    const positions = this.pointCloud.geometry.attributes['position'];
+    const originalPositions = new Float32Array(positions.count * 3);
+
+    // Store original positions if not already stored
+    for (let i = 0; i < this.pointCloud.data.length; i++) {
+      originalPositions[i * 3] = this.pointCloud.data[i].position.x;
+      originalPositions[i * 3 + 1] = this.pointCloud.data[i].position.y;
+      originalPositions[i * 3 + 2] = this.pointCloud.data[i].position.z;
+    }
+
+    // Get plane normals and positions
+    const plane1Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane1.quaternion);
+    const plane1Point = this.plane1.position.clone();
+    const plane2Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane2.quaternion);
+    const plane2Point = this.plane2.position.clone();
+
+    // Filter points: only show points between the two planes
+    const newPositions: number[] = [];
+    const newColors: number[] = [];
+
+    for (let i = 0; i < this.pointCloud.data.length; i++) {
+      const point = this.pointCloud.data[i].position;
+
+      // Calculate signed distance to each plane
+      const dist1 = plane1Normal.dot(point.clone().sub(plane1Point));
+      const dist2 = plane2Normal.dot(point.clone().sub(plane2Point));
+
+      // Point is between planes if it's on opposite sides of both planes
+      const isBetween = (dist1 >= 0 && dist2 <= 0) || (dist1 <= 0 && dist2 >= 0);
+
+      if (isBetween) {
+        newPositions.push(point.x, point.y, point.z);
+        const color = this.manipulabilityToColor(
+          this.pointCloud.data[i].manipulability,
+          this.manipulabilityRange.min,
+          this.manipulabilityRange.max
+        );
+        newColors.push(color.r, color.g, color.b);
+      }
+    }
+
+    // Update geometry
+    this.pointCloud.geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+    this.pointCloud.geometry.setAttribute('color', new THREE.Float32BufferAttribute(newColors, 3));
+    this.pointCloud.geometry.attributes['position'].needsUpdate = true;
+    this.pointCloud.geometry.attributes['color'].needsUpdate = true;
+  }
+
+  private manipulabilityToColor(value: number, min: number, max: number): THREE.Color {
+    // Normalize to [0, 1], where 0 = low manip, 1 = high manip
+    const normalized = (value - min) / (max - min);
+
+    // Invert: we want red for low (0) and blue for high (1)
+    const inverted = 1 - normalized;
+
+    // HSL gradient: Blue (240°) at high manip → Red (0°) at low manip
+    const hue = inverted * 240;
+
+    return new THREE.Color().setHSL(hue / 360, 1.0, 0.5);
+  }
+
+  onPointCloudVisibilityChange(): void {
+    if (this.pointCloud) {
+      this.pointCloud.points.visible = this.showPointCloud;
+    }
+  }
+
+  onClippingPlanesVisibilityChange(): void {
+    if (this.plane1 && this.plane2) {
+      this.plane1.visible = this.showClippingPlanes;
+      this.plane2.visible = this.showClippingPlanes;
+    }
+    if (this.arrow1 && this.arrow2) {
+      this.arrow1.visible = this.showClippingPlanes;
+      this.arrow2.visible = this.showClippingPlanes;
+    }
+  }
+
+  onPlaneFilteringChange(): void {
+    if (this.enablePlaneFiltering) {
+      this.updatePointCloudFiltering();
+    } else {
+      // Restore all points
+      if (this.pointCloud) {
+        const positions: number[] = [];
+        const colors: number[] = [];
+
+        for (const mcPoint of this.pointCloud.data) {
+          positions.push(mcPoint.position.x, mcPoint.position.y, mcPoint.position.z);
+          const color = this.manipulabilityToColor(
+            mcPoint.manipulability,
+            this.manipulabilityRange.min,
+            this.manipulabilityRange.max
+          );
+          colors.push(color.r, color.g, color.b);
+        }
+
+        this.pointCloud.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        this.pointCloud.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        this.pointCloud.geometry.attributes['position'].needsUpdate = true;
+        this.pointCloud.geometry.attributes['color'].needsUpdate = true;
+      }
+    }
+  }
+
+  async regeneratePointCloud(): Promise<void> {
+    if (!this.wasmModule || !this.kinematicTree) return;
+    this.manipulabilityRange = { min: Infinity, max: -Infinity };
+    await this.generateMonteCarloPointCloud();
+  }
+
+  private async generateMonteCarloPointCloud(): Promise<void> {
+    if (!this.wasmModule || !this.kinematicTree) return;
+
+    this.isGeneratingPointCloud = true;
+    this.pointCloudProgress = 0;
+    const points: MonteCarloPoint[] = [];
+    const batchSize = 20;  // Process 20 points per frame for responsiveness
+
+    // Get joint limits for random sampling
+    const jointLimits = this.joints.map(j => ({
+      name: j.name,
+      lower: j.lower,
+      upper: j.upper
+    }));
+
+    // Create StringVector for WASM calls
+    const jointNamesVec = new this.wasmModule.StringVector();
+    for (const joint of this.joints) {
+      jointNamesVec.push_back(joint.name);
+    }
+
+    // Generate points in batches (non-blocking)
+    for (let i = 0; i < this.pointCloudCount; i += batchSize) {
+      const currentBatchSize = Math.min(batchSize, this.pointCloudCount - i);
+
+      for (let j = 0; j < currentBatchSize; j++) {
+        // Random joint configuration
+        const jointConfig = jointLimits.map(limit =>
+          limit.lower + Math.random() * (limit.upper - limit.lower)
+        );
+
+        // Update kinematic tree
+        for (let k = 0; k < this.joints.length; k++) {
+          this.kinematicTree.updateTheta(this.joints[k].name, jointConfig[k]);
+        }
+
+        // Get end-effector position via FK
+        const flatVec = this.wasmModule.fkFlat(this.kinematicTree, 'ee_link');
+        const elements: number[] = [];
+        for (let k = 0; k < 16; k++) elements.push(flatVec.get(k));
+        flatVec.delete();
+
+        const mat4 = new THREE.Matrix4().fromArray(elements);
+        const position = new THREE.Vector3().setFromMatrixPosition(mat4);
+
+        // Compute manipulability
+        const manipulability = this.wasmModule.getPositionManipulability(
+          this.kinematicTree,
+          'ee_link',
+          'base_link',
+          jointNamesVec
+        );
+
+        points.push({ position, manipulability, jointConfig: [...jointConfig] });
+
+        // Track range for color mapping
+        this.manipulabilityRange.min = Math.min(this.manipulabilityRange.min, manipulability);
+        this.manipulabilityRange.max = Math.max(this.manipulabilityRange.max, manipulability);
+      }
+
+      this.pointCloudProgress = ((i + currentBatchSize) / this.pointCloudCount) * 100;
+      await new Promise(resolve => setTimeout(resolve, 0));  // Yield to UI
+    }
+
+    jointNamesVec.delete();
+
+    // Restore original configuration
+    for (const joint of this.joints) {
+      this.kinematicTree.updateTheta(joint.name, joint.value);
+    }
+    this.updateRobotVisualization();
+
+    this.createPointCloudVisualization(points);
+    this.isGeneratingPointCloud = false;
   }
 
   radToDeg(rad: number): number {

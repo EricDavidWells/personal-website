@@ -34,6 +34,87 @@
                     </div>
                 }
             </fieldset>
+
+            <fieldset>
+                <legend>Manipulability Workspace</legend>
+
+                <div class="workspace-controls">
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showPointCloud"
+                                   (change)="onPointCloudVisibilityChange()" />
+                            Show Point Cloud
+                        </label>
+                    </div>
+
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showClippingPlanes"
+                                   (change)="onClippingPlanesVisibilityChange()" />
+                            Show Clipping Planes
+                        </label>
+                    </div>
+
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="enablePlaneFiltering"
+                                   (change)="onPlaneFilteringChange()"
+                                   [disabled]="!pointCloud" />
+                            Enable Plane Filtering
+                        </label>
+                    </div>
+
+                    <div class="control-row">
+                        <label for="pointCount">Point Count: {{ pointCloudCount }}</label>
+                        <input type="range"
+                               id="pointCount"
+                               [min]="50"
+                               [max]="50000"
+                               step="50"
+                               [(ngModel)]="pointCloudCount"
+                               [disabled]="isGeneratingPointCloud" />
+                        <div class="range-labels">
+                            <span>50</span>
+                            <span>50000</span>
+                        </div>
+                    </div>
+
+                    <button (click)="regeneratePointCloud()"
+                            [disabled]="isGeneratingPointCloud || !wasmModule">
+                        {{ isGeneratingPointCloud ? 'Generating...' : 'Generate Point Cloud' }}
+                    </button>
+
+                    @if (isGeneratingPointCloud) {
+                        <div class="progress-bar">
+                            <div class="progress-fill"
+                                 [style.width.%]="pointCloudProgress"></div>
+                        </div>
+                        <div class="progress-text">{{ pointCloudProgress | number:'1.0-0' }}%</div>
+                    }
+
+                    @if (pointCloud && !isGeneratingPointCloud) {
+                        <div class="manip-info">
+                            <div class="manip-range">
+                                <span>Manipulability Range:</span>
+                                <span class="manip-value">
+                                    {{ manipulabilityRange.min | number:'1.4-4' }} -
+                                    {{ manipulabilityRange.max | number:'1.4-4' }}
+                                </span>
+                            </div>
+                            <div class="color-legend">
+                                <div class="legend-gradient"></div>
+                                <div class="legend-labels">
+                                    <span>Singular (Low)</span>
+                                    <span>Optimal (High)</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </fieldset>
         }
     </div>
 </div>
