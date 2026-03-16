@@ -109,6 +109,12 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   pointCloudProgress = 0;
   showClippingPlanes = false;
   enablePlaneFiltering = false;
+  selectedUrdf = 'ur5';
+  availableUrdfs = [
+    { name: 'ur5', label: 'UR5 (6DOF)' },
+    { name: 'simple_3dof', label: 'Simple 3DOF' }
+  ];
+  private cancelGeneration = false;
 
   constructor(@Inject(PLATFORM_ID) platformId: Object) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -203,17 +209,73 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       const moduleFactory = (await import(/* @vite-ignore */ wasmUrl)).default;
       this.wasmModule = await moduleFactory();
 
-      const urdfResponse = await fetch('/assets/urdf/ur5.urdf');
-      const urdfContent = await urdfResponse.text();
-      this.kinematicTree = this.wasmModule!.loadUrdfFromString(urdfContent);
-
-      this.extractJointInfo();
-      this.buildRobot();
+      await this.loadUrdf(this.selectedUrdf);
       this.loading = false;
     } catch (e: any) {
       this.errorMessage = e.message || String(e);
       this.loading = false;
     }
+  }
+
+  private async loadUrdf(urdfName: string): Promise<void> {
+    if (!this.wasmModule) return;
+
+    // Clear existing robot
+    this.clearRobot();
+
+    const urdfResponse = await fetch(`/assets/urdf/${urdfName}.urdf`);
+    const urdfContent = await urdfResponse.text();
+    this.kinematicTree = this.wasmModule.loadUrdfFromString(urdfContent);
+
+    this.extractJointInfo();
+    this.buildRobot();
+
+    // Clear point cloud when switching robots
+    if (this.pointCloud) {
+      this.scene.remove(this.pointCloud.points);
+      this.pointCloud.geometry.dispose();
+      this.pointCloud.material.dispose();
+      this.pointCloud = null;
+      this.manipulabilityRange = { min: Infinity, max: -Infinity };
+    }
+  }
+
+  private clearRobot(): void {
+    // Remove all link groups and meshes
+    this.linkGroups.forEach(group => {
+      this.scene.remove(group);
+    });
+    this.linkGroups.clear();
+
+    this.linkMeshes.forEach(mesh => {
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+      this.scene.remove(mesh);
+    });
+    this.linkMeshes.clear();
+
+    // Remove joint spheres
+    for (const joint of this.joints) {
+      const sphere = this.scene.getObjectByName('sphere_' + joint.name);
+      if (sphere) {
+        this.scene.remove(sphere);
+        (sphere as THREE.Mesh).geometry.dispose();
+        ((sphere as THREE.Mesh).material as THREE.Material).dispose();
+      }
+    }
+
+    this.joints = [];
+    this.jointInfoList = [];
+  }
+
+  async onUrdfChange(): Promise<void> {
+    this.loading = true;
+    try {
+      await this.loadUrdf(this.selectedUrdf);
+    } catch (e: any) {
+      this.errorMessage = e.message || String(e);
+    }
+    this.loading = false;
   }
 
   private extractJointInfo(): void {
@@ -631,11 +693,11 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
     const material = new THREE.PointsMaterial({
-      size: 0.015,
+      size: 0.0375,  // Half of 0.075 for better balance
       vertexColors: true,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.4,  // More transparent
       depthWrite: false
     });
 
@@ -654,21 +716,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   private updatePointCloudFiltering(): void {
     if (!this.pointCloud || !this.enablePlaneFiltering || !this.plane1 || !this.plane2) return;
 
-    const positions = this.pointCloud.geometry.attributes['position'];
-    const originalPositions = new Float32Array(positions.count * 3);
-
-    // Store original positions if not already stored
-    for (let i = 0; i < this.pointCloud.data.length; i++) {
-      originalPositions[i * 3] = this.pointCloud.data[i].position.x;
-      originalPositions[i * 3 + 1] = this.pointCloud.data[i].position.y;
-      originalPositions[i * 3 + 2] = this.pointCloud.data[i].position.z;
-    }
-
     // Get plane normals and positions
     const plane1Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane1.quaternion);
     const plane1Point = this.plane1.position.clone();
     const plane2Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane2.quaternion);
     const plane2Point = this.plane2.position.clone();
+
+    // OPTIMIZATION 3: Reuse temp vector (avoid allocations in hot loop)
+    const tempVec = new THREE.Vector3();
 
     // Filter points: only show points between the two planes
     const newPositions: number[] = [];
@@ -677,9 +732,12 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     for (let i = 0; i < this.pointCloud.data.length; i++) {
       const point = this.pointCloud.data[i].position;
 
-      // Calculate signed distance to each plane
-      const dist1 = plane1Normal.dot(point.clone().sub(plane1Point));
-      const dist2 = plane2Normal.dot(point.clone().sub(plane2Point));
+      // Calculate distances without cloning (reuse tempVec)
+      tempVec.copy(point).sub(plane1Point);
+      const dist1 = plane1Normal.dot(tempVec);
+
+      tempVec.copy(point).sub(plane2Point);
+      const dist2 = plane2Normal.dot(tempVec);
 
       // Point is between planes if it's on opposite sides of both planes
       const isBetween = (dist1 >= 0 && dist2 <= 0) || (dist1 <= 0 && dist2 >= 0);
@@ -706,11 +764,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Normalize to [0, 1], where 0 = low manip, 1 = high manip
     const normalized = (value - min) / (max - min);
 
-    // Invert: we want red for low (0) and blue for high (1)
-    const inverted = 1 - normalized;
-
-    // HSL gradient: Blue (240°) at high manip → Red (0°) at low manip
-    const hue = inverted * 240;
+    // Map: 0 (low manip) → red (0°), 1 (high manip) → blue (240°)
+    // This creates a smooth transition: red → orange → yellow → green → cyan → blue
+    const hue = normalized * 240;
 
     return new THREE.Color().setHSL(hue / 360, 1.0, 0.5);
   }
@@ -770,8 +826,11 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.isGeneratingPointCloud = true;
     this.pointCloudProgress = 0;
+    this.cancelGeneration = false;
     const points: MonteCarloPoint[] = [];
-    const batchSize = 20;  // Process 20 points per frame for responsiveness
+
+    // OPTIMIZATION 2: Adaptive batch size (target ~20-30 batches, more responsive)
+    const batchSize = Math.max(20, Math.min(200, Math.floor(this.pointCloudCount / 25)));
 
     // Get joint limits for random sampling
     const jointLimits = this.joints.map(j => ({
@@ -786,47 +845,72 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       jointNamesVec.push_back(joint.name);
     }
 
-    // Generate points in batches (non-blocking)
-    for (let i = 0; i < this.pointCloudCount; i += batchSize) {
-      const currentBatchSize = Math.min(batchSize, this.pointCloudCount - i);
+    // OPTIMIZATION 1: Get plane bounds if filtering is enabled (rejection sampling)
+    let planeBounds: { min: number, max: number } | null = null;
+    if (this.enablePlaneFiltering && this.plane1 && this.plane2) {
+      const plane1Z = this.plane1.position.z;
+      const plane2Z = this.plane2.position.z;
+      planeBounds = {
+        min: Math.min(plane1Z, plane2Z),
+        max: Math.max(plane1Z, plane2Z)
+      };
+    }
 
-      for (let j = 0; j < currentBatchSize; j++) {
-        // Random joint configuration
-        const jointConfig = jointLimits.map(limit =>
-          limit.lower + Math.random() * (limit.upper - limit.lower)
-        );
+    // Use rejection sampling if plane filtering is enabled
+    let successfulPoints = 0;
+    let attempts = 0;
+    const maxAttempts = this.pointCloudCount * 10; // Safety limit
 
-        // Update kinematic tree
-        for (let k = 0; k < this.joints.length; k++) {
-          this.kinematicTree.updateTheta(this.joints[k].name, jointConfig[k]);
-        }
+    while (successfulPoints < this.pointCloudCount && attempts < maxAttempts && !this.cancelGeneration) {
+      // Random joint configuration
+      const jointConfig = jointLimits.map(limit =>
+        limit.lower + Math.random() * (limit.upper - limit.lower)
+      );
 
-        // Get end-effector position via FK
-        const flatVec = this.wasmModule.fkFlat(this.kinematicTree, 'ee_link');
-        const elements: number[] = [];
-        for (let k = 0; k < 16; k++) elements.push(flatVec.get(k));
-        flatVec.delete();
-
-        const mat4 = new THREE.Matrix4().fromArray(elements);
-        const position = new THREE.Vector3().setFromMatrixPosition(mat4);
-
-        // Compute manipulability
-        const manipulability = this.wasmModule.getPositionManipulability(
-          this.kinematicTree,
-          'ee_link',
-          'base_link',
-          jointNamesVec
-        );
-
-        points.push({ position, manipulability, jointConfig: [...jointConfig] });
-
-        // Track range for color mapping
-        this.manipulabilityRange.min = Math.min(this.manipulabilityRange.min, manipulability);
-        this.manipulabilityRange.max = Math.max(this.manipulabilityRange.max, manipulability);
+      // Update kinematic tree
+      for (let k = 0; k < this.joints.length; k++) {
+        this.kinematicTree.updateTheta(this.joints[k].name, jointConfig[k]);
       }
 
-      this.pointCloudProgress = ((i + currentBatchSize) / this.pointCloudCount) * 100;
-      await new Promise(resolve => setTimeout(resolve, 0));  // Yield to UI
+      // Get end-effector position via FK
+      const flatVec = this.wasmModule.fkFlat(this.kinematicTree, 'ee_link');
+      const elements: number[] = [];
+      for (let k = 0; k < 16; k++) elements.push(flatVec.get(k));
+      flatVec.delete();
+
+      const mat4 = new THREE.Matrix4().fromArray(elements);
+      const position = new THREE.Vector3().setFromMatrixPosition(mat4);
+
+      // OPTIMIZATION 1: Check if point is within plane bounds BEFORE expensive manipulability calculation
+      if (planeBounds) {
+        const posZ = position.z;
+        if (posZ < planeBounds.min || posZ > planeBounds.max) {
+          attempts++;
+          continue; // Skip this point - outside bounds
+        }
+      }
+
+      // Only compute manipulability for points that passed the filter
+      const manipulability = this.wasmModule.getPositionManipulability(
+        this.kinematicTree,
+        'ee_link',
+        'base_link',
+        jointNamesVec
+      );
+
+      points.push({ position, manipulability, jointConfig: [...jointConfig] });
+      successfulPoints++;
+      attempts++;
+
+      // Track range for color mapping
+      this.manipulabilityRange.min = Math.min(this.manipulabilityRange.min, manipulability);
+      this.manipulabilityRange.max = Math.max(this.manipulabilityRange.max, manipulability);
+
+      // Batch progress updates (yield to UI every batch)
+      if (successfulPoints % batchSize === 0) {
+        this.pointCloudProgress = (successfulPoints / this.pointCloudCount) * 100;
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
     }
 
     jointNamesVec.delete();
@@ -837,8 +921,17 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     this.updateRobotVisualization();
 
-    this.createPointCloudVisualization(points);
+    // Only create visualization if we have points and weren't canceled
+    if (points.length > 0 && !this.cancelGeneration) {
+      this.createPointCloudVisualization(points);
+    }
+
     this.isGeneratingPointCloud = false;
+    this.cancelGeneration = false;
+  }
+
+  cancelPointCloudGeneration(): void {
+    this.cancelGeneration = true;
   }
 
   radToDeg(rad: number): number {

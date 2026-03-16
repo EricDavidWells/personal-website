@@ -14,6 +14,22 @@
 
         @if (!loading && !errorMessage) {
             <fieldset>
+                <legend>Robot Selection</legend>
+                <div class="workspace-controls">
+                    <div class="control-row">
+                        <label for="urdfSelect">URDF:</label>
+                        <select id="urdfSelect"
+                                [(ngModel)]="selectedUrdf"
+                                (change)="onUrdfChange()">
+                            @for (urdf of availableUrdfs; track urdf.name) {
+                                <option [value]="urdf.name">{{ urdf.label }}</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset>
                 <legend>Joint Angles</legend>
                 @for (joint of joints; track joint.name) {
                     <div class="joint-control">
@@ -82,10 +98,19 @@
                         </div>
                     </div>
 
-                    <button (click)="regeneratePointCloud()"
-                            [disabled]="isGeneratingPointCloud || !wasmModule">
-                        {{ isGeneratingPointCloud ? 'Generating...' : 'Generate Point Cloud' }}
-                    </button>
+                    <div class="button-group">
+                        <button (click)="regeneratePointCloud()"
+                                [disabled]="isGeneratingPointCloud || !wasmModule">
+                            Generate Point Cloud
+                        </button>
+
+                        @if (isGeneratingPointCloud) {
+                            <button (click)="cancelPointCloudGeneration()"
+                                    class="cancel-button">
+                                Stop
+                            </button>
+                        }
+                    </div>
 
                     @if (isGeneratingPointCloud) {
                         <div class="progress-bar">
