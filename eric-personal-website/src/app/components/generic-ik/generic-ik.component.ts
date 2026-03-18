@@ -23,6 +23,25 @@ interface JointInfo {
   type: string;
   lowerLimit: number;
   upperLimit: number;
+  axis: any;  // DoubleVector (3 elements: x, y, z)
+  originXyz: any;  // DoubleVector (3 elements: x, y, z)
+  originRpy: any;  // DoubleVector (3 elements: roll, pitch, yaw)
+}
+
+interface ManipulabilityResult {
+  wPos: number;
+  wOri: number;
+  posAxes: any;    // DoubleVector (9 elements)
+  posValues: any;  // DoubleVector (3 elements)
+  oriAxes: any;    // DoubleVector (9 elements)
+  oriValues: any;  // DoubleVector (3 elements)
+}
+
+interface EllipsoidVisualization {
+  posEllipsoid: THREE.Mesh | null;
+  oriEllipsoid: THREE.Mesh | null;
+  posAxesGroup: THREE.Group | null;
+  oriAxesGroup: THREE.Group | null;
 }
 
 interface KinematicsModule {
@@ -37,12 +56,19 @@ interface KinematicsModule {
     baseName: string,
     jointNames: any
   ): number;
+  getManipulability(
+    tree: any,
+    tipName: string,
+    baseName: string,
+    jointNames: any
+  ): ManipulabilityResult;
   StringVector: any;
 }
 
 interface MonteCarloPoint {
   position: THREE.Vector3;
   manipulability: number;
+  conditionNumber: number;
   jointConfig: number[];
 }
 
@@ -90,6 +116,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
   pointCloud: PointCloudVisualization | null = null;
   manipulabilityRange = { min: Infinity, max: -Infinity };
+  conditionNumberRange = { min: Infinity, max: -Infinity };
+
+  manipulabilityEllipsoid: EllipsoidVisualization | null = null;
 
   // Clipping planes
   private plane1: THREE.Mesh | null = null;
@@ -114,7 +143,19 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     { name: 'ur5', label: 'UR5 (6DOF)' },
     { name: 'simple_3dof', label: 'Simple 3DOF' }
   ];
+  manipulabilityMetric: 'volume' | 'condition' = 'volume';
   private cancelGeneration = false;
+
+  // Manipulability ellipsoid controls
+  showManipulabilityEllipsoid = true;
+  showPositionEllipsoid = true;
+  showOrientationEllipsoid = false;
+  showEllipsoidAxes = true;
+  ellipsoidOpacity = 0.3;
+
+  // Robot and frame visibility controls
+  showRobot = true;
+  showFrames = true;
 
   constructor(@Inject(PLATFORM_ID) platformId: Object) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -166,6 +207,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       this.scene.remove(this.arrow2);
       this.arrow2.dispose();
     }
+
+    // Clean up ellipsoid
+    this.cleanupEllipsoidVisualization();
   }
 
   onJointChange(): void {
@@ -254,18 +298,21 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     });
     this.linkMeshes.clear();
 
-    // Remove joint spheres
+    // Remove joint cylinders
     for (const joint of this.joints) {
-      const sphere = this.scene.getObjectByName('sphere_' + joint.name);
-      if (sphere) {
-        this.scene.remove(sphere);
-        (sphere as THREE.Mesh).geometry.dispose();
-        ((sphere as THREE.Mesh).material as THREE.Material).dispose();
+      const cylinder = this.scene.getObjectByName('joint_cylinder_' + joint.name);
+      if (cylinder) {
+        this.scene.remove(cylinder);
+        (cylinder as THREE.Mesh).geometry.dispose();
+        ((cylinder as THREE.Mesh).material as THREE.Material).dispose();
       }
     }
 
     this.joints = [];
     this.jointInfoList = [];
+
+    // Clean up ellipsoid
+    this.cleanupEllipsoidVisualization();
   }
 
   async onUrdfChange(): Promise<void> {
@@ -327,28 +374,48 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     // Create cylinder meshes between parent and child links of each joint
+    const linkColor = 0x888888;  // Gray for all links
     for (let i = 0; i < this.jointInfoList.length; i++) {
       const info = this.jointInfoList[i];
       if (!info.parentLink || !info.childLink) continue;
 
-      const color = LINK_COLORS[i % LINK_COLORS.length];
-      const mat = new THREE.MeshStandardMaterial({ color });
+      const mat = new THREE.MeshStandardMaterial({ color: linkColor });
       const geo = new THREE.CylinderGeometry(0.04, 0.04, 1, 12);
       const mesh = new THREE.Mesh(geo, mat);
+      mesh.visible = false;  // Hide initially, will be shown in updateRobotVisualization
       this.scene.add(mesh);
       this.linkMeshes.set(info.name, mesh);
     }
 
-    // Joint spheres at each active joint
+    // Joint cylinders at each active joint (oriented along joint axis)
+    const jointColor = 0xffb380;  // Pastel orange for all joints
+    const linkRadius = 0.04;
+    const jointRadius = linkRadius * 1.2;  // 20% larger than links
+    const jointHeight = jointRadius * 2;  // Height = diameter
+
     for (const joint of this.joints) {
       const info = this.jointInfoList.find(j => j.name === joint.name);
-      if (!info) continue;
-      const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(0.05, 16, 16),
-        new THREE.MeshStandardMaterial({ color: 0xeeeeee })
+      if (!info || !info.axis) continue;
+
+      // Extract axis from WASM vector
+      const axisX = info.axis.get(0);
+      const axisY = info.axis.get(1);
+      const axisZ = info.axis.get(2);
+      const axisVec = new THREE.Vector3(axisX, axisY, axisZ).normalize();
+
+      // Create cylinder (height along Y axis by default, 20% larger radius than links)
+      const cylinder = new THREE.Mesh(
+        new THREE.CylinderGeometry(jointRadius, jointRadius, jointHeight, 16),
+        new THREE.MeshStandardMaterial({ color: jointColor })
       );
-      sphere.name = 'sphere_' + joint.name;
-      this.scene.add(sphere);
+
+      // Orient cylinder along joint axis
+      const yAxis = new THREE.Vector3(0, 1, 0);
+      const quaternion = new THREE.Quaternion().setFromUnitVectors(yAxis, axisVec);
+      cylinder.quaternion.copy(quaternion);
+
+      cylinder.name = 'joint_cylinder_' + joint.name;
+      this.scene.add(cylinder);
     }
 
     // Axes at base and end-effector
@@ -406,7 +473,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         mesh.visible = false;
         continue;
       }
-      mesh.visible = true;
+      mesh.visible = this.showRobot;
 
       mesh.position.copy(mid);
       mesh.scale.set(1, length, 1);
@@ -417,16 +484,53 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       mesh.quaternion.copy(quat);
     }
 
-    // Update joint sphere positions
+    // Update joint cylinder positions and orientations
     for (const joint of this.joints) {
       const info = this.jointInfoList.find(j => j.name === joint.name);
-      if (!info?.childLink) continue;
+      if (!info?.childLink || !info?.axis) continue;
 
       const childGroup = this.linkGroups.get(info.childLink);
-      const sphere = this.scene.getObjectByName('sphere_' + joint.name);
-      if (childGroup && sphere) {
-        sphere.position.copy(childGroup.position);
+      const cylinder = this.scene.getObjectByName('joint_cylinder_' + joint.name);
+
+      if (childGroup && cylinder) {
+        // Position at child link
+        cylinder.position.copy(childGroup.position);
+
+        // Get the joint frame transform using FK
+        try {
+          const jointFlatVec = this.wasmModule!.fkFlat(this.kinematicTree, joint.name);
+          const jointElements: number[] = [];
+          for (let i = 0; i < 16; i++) jointElements.push(jointFlatVec.get(i));
+          jointFlatVec.delete();
+
+          const jointMat4 = new THREE.Matrix4().fromArray(jointElements);
+          const jointQuat = new THREE.Quaternion().setFromRotationMatrix(jointMat4);
+
+          // Extract joint axis from WASM vector
+          const axisX = info.axis.get(0);
+          const axisY = info.axis.get(1);
+          const axisZ = info.axis.get(2);
+          const localAxis = new THREE.Vector3(axisX, axisY, axisZ).normalize();
+
+          // Transform local axis by joint frame rotation to get world-space direction
+          const worldAxis = localAxis.clone().applyQuaternion(jointQuat);
+
+          // Orient cylinder along the transformed axis
+          const yAxis = new THREE.Vector3(0, 1, 0);
+          const quaternion = new THREE.Quaternion().setFromUnitVectors(yAxis, worldAxis);
+          cylinder.quaternion.copy(quaternion);
+
+          cylinder.visible = this.showRobot;
+        } catch (error) {
+          // If FK fails for this joint, skip it
+          console.warn(`Could not get FK for joint ${joint.name}:`, error);
+        }
       }
+    }
+
+    // Update ellipsoid if visible
+    if (this.showManipulabilityEllipsoid) {
+      this.createManipulabilityEllipsoidVisualization();
     }
   }
 
@@ -468,6 +572,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.scene.add(grid);
 
     const worldAxes = this.createAxes(0.3);
+    worldAxes.name = 'world_axes';
     const worldLabel = this.createLabel('world');
     worldAxes.add(worldLabel);
     this.scene.add(worldAxes);
@@ -665,6 +770,95 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     return label;
   }
 
+  private extractAxesFromVector(axesVec: any): THREE.Vector3[] {
+    // Column-major: [col0_x, col0_y, col0_z, col1_x, col1_y, col1_z, col2_x, col2_y, col2_z]
+    const axes: THREE.Vector3[] = [];
+    for (let col = 0; col < 3; col++) {
+      axes.push(new THREE.Vector3(
+        axesVec.get(col * 3 + 0),
+        axesVec.get(col * 3 + 1),
+        axesVec.get(col * 3 + 2)
+      ));
+    }
+    return axes;
+  }
+
+  private extractValuesFromVector(valuesVec: any): number[] {
+    const values: number[] = [];
+    for (let i = 0; i < 3; i++) values.push(valuesVec.get(i));
+    return values;
+  }
+
+  private createEllipsoidMesh(
+    position: THREE.Vector3,
+    axes: THREE.Vector3[],
+    values: number[],
+    color: number,
+    opacity: number
+  ): THREE.Mesh {
+    // More segments for smoother wireframe
+    const geometry = new THREE.SphereGeometry(1, 48, 36);
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      wireframe: true,
+      side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+
+    // Build rotation matrix from principal axes (columns)
+    const rotationMatrix = new THREE.Matrix4();
+    rotationMatrix.set(
+      axes[0].x, axes[1].x, axes[2].x, 0,
+      axes[0].y, axes[1].y, axes[2].y, 0,
+      axes[0].z, axes[1].z, axes[2].z, 0,
+      0, 0, 0, 1
+    );
+
+    // Apply scale then rotation
+    const scaleMatrix = new THREE.Matrix4().makeScale(values[0], values[1], values[2]);
+    const transform = new THREE.Matrix4().multiplyMatrices(rotationMatrix, scaleMatrix);
+
+    mesh.matrix.copy(transform);
+    mesh.matrix.setPosition(position);
+    mesh.matrixAutoUpdate = false;
+
+    return mesh;
+  }
+
+  private createEllipsoidAxes(
+    position: THREE.Vector3,
+    axes: THREE.Vector3[],
+    values: number[],
+    baseColor: number
+  ): THREE.Group {
+    const group = new THREE.Group();
+
+    for (let i = 0; i < 3; i++) {
+      const direction = axes[i].clone().normalize();
+      const length = values[i];
+
+      // Brightest for largest axis
+      const brightness = 0.5 + (0.5 * (i === 0 ? 1.0 : i === 1 ? 0.7 : 0.4));
+      const axisColor = new THREE.Color(baseColor).multiplyScalar(brightness);
+
+      const arrow = new THREE.ArrowHelper(
+        direction,
+        position,
+        length,
+        axisColor.getHex(),
+        length * 0.15,
+        length * 0.1
+      );
+
+      group.add(arrow);
+    }
+
+    return group;
+  }
+
   private createPointCloudVisualization(mcPoints: MonteCarloPoint[]): void {
     // Clean up existing
     if (this.pointCloud) {
@@ -679,12 +873,22 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     for (const mcPoint of mcPoints) {
       positions.push(mcPoint.position.x, mcPoint.position.y, mcPoint.position.z);
 
-      // Color mapping: Blue (high manip) → Red (low manip/singularities)
-      const color = this.manipulabilityToColor(
-        mcPoint.manipulability,
-        this.manipulabilityRange.min,
-        this.manipulabilityRange.max
-      );
+      // Color mapping based on selected metric
+      let value: number, minVal: number, maxVal: number;
+      if (this.manipulabilityMetric === 'volume') {
+        value = mcPoint.manipulability;
+        minVal = this.manipulabilityRange.min;
+        maxVal = this.manipulabilityRange.max;
+      } else {
+        // Condition number: lower is better (use log scale)
+        value = isFinite(mcPoint.conditionNumber) ? mcPoint.conditionNumber : this.conditionNumberRange.max;
+        minVal = this.conditionNumberRange.min;
+        maxVal = this.conditionNumberRange.max;
+      }
+
+      // Color mapping: Blue (good) → Red (bad/singularities)
+      const useLogScale = this.manipulabilityMetric === 'condition';
+      const color = this.manipulabilityToColor(value, minVal, maxVal, useLogScale);
       colors.push(color.r, color.g, color.b);
     }
 
@@ -693,16 +897,17 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
     const material = new THREE.PointsMaterial({
-      size: 0.0375,  // Half of 0.075 for better balance
+      size: 0.01875,  // 50% of previous size
       vertexColors: true,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.4,  // More transparent
+      opacity: 0.9,  // Less see-through
       depthWrite: false
     });
 
     const points = new THREE.Points(geometry, material);
-    points.visible = this.showPointCloud;
+    points.visible = true;  // Always show after generation
+    this.showPointCloud = true;  // Update UI state
     this.scene.add(points);
 
     this.pointCloud = { points, geometry, material, data: mcPoints, visible: this.showPointCloud };
@@ -744,11 +949,23 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (isBetween) {
         newPositions.push(point.x, point.y, point.z);
-        const color = this.manipulabilityToColor(
-          this.pointCloud.data[i].manipulability,
-          this.manipulabilityRange.min,
-          this.manipulabilityRange.max
-        );
+
+        // Color based on selected metric
+        let value: number, minVal: number, maxVal: number;
+        if (this.manipulabilityMetric === 'volume') {
+          value = this.pointCloud.data[i].manipulability;
+          minVal = this.manipulabilityRange.min;
+          maxVal = this.manipulabilityRange.max;
+        } else {
+          value = isFinite(this.pointCloud.data[i].conditionNumber)
+            ? this.pointCloud.data[i].conditionNumber
+            : this.conditionNumberRange.max;
+          minVal = this.conditionNumberRange.min;
+          maxVal = this.conditionNumberRange.max;
+        }
+
+        const useLogScale = this.manipulabilityMetric === 'condition';
+        const color = this.manipulabilityToColor(value, minVal, maxVal, useLogScale);
         newColors.push(color.r, color.g, color.b);
       }
     }
@@ -760,11 +977,147 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.pointCloud.geometry.attributes['color'].needsUpdate = true;
   }
 
-  private manipulabilityToColor(value: number, min: number, max: number): THREE.Color {
-    // Normalize to [0, 1], where 0 = low manip, 1 = high manip
-    const normalized = (value - min) / (max - min);
+  private createManipulabilityEllipsoidVisualization(): void {
+    if (!this.wasmModule || !this.kinematicTree) return;
 
-    // Map: 0 (low manip) → red (0°), 1 (high manip) → blue (240°)
+    // Clean up existing
+    if (this.manipulabilityEllipsoid) {
+      this.cleanupEllipsoidVisualization();
+    }
+
+    try {
+      // Get manipulability data
+      const jointNamesVec = new this.wasmModule.StringVector();
+      for (const joint of this.joints) {
+        jointNamesVec.push_back(joint.name);
+      }
+
+      // Check if getManipulability function exists
+      if (!this.wasmModule.getManipulability) {
+        console.warn('getManipulability function not available in WASM module');
+        jointNamesVec.delete();
+        return;
+      }
+
+      const manip = this.wasmModule.getManipulability(
+        this.kinematicTree,
+        'ee_link',
+        'base_link',
+        jointNamesVec
+      );
+      jointNamesVec.delete();
+
+      // Validate manipulability result
+      if (!manip || !manip.posAxes || !manip.posValues || !manip.oriAxes || !manip.oriValues) {
+        console.warn('Invalid manipulability result');
+        return;
+      }
+
+      // Get end-effector position
+      const flatVec = this.wasmModule.fkFlat(this.kinematicTree, 'ee_link');
+      const elements: number[] = [];
+      for (let i = 0; i < 16; i++) elements.push(flatVec.get(i));
+      flatVec.delete();
+
+      const mat4 = new THREE.Matrix4().fromArray(elements);
+      const eePosition = new THREE.Vector3().setFromMatrixPosition(mat4);
+
+      // Extract ellipsoid data
+      const posAxes = this.extractAxesFromVector(manip.posAxes);
+      const posValues = this.extractValuesFromVector(manip.posValues);
+      const oriAxes = this.extractAxesFromVector(manip.oriAxes);
+      const oriValues = this.extractValuesFromVector(manip.oriValues);
+
+      // Create position ellipsoid (blue)
+      const posEllipsoid = this.createEllipsoidMesh(
+        eePosition, posAxes, posValues, 0x4488ff, this.ellipsoidOpacity
+      );
+      posEllipsoid.visible = this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
+      this.scene.add(posEllipsoid);
+
+      // Create orientation ellipsoid (green, scaled by 0.1 for visibility)
+      const scaledOriValues = oriValues.map(v => v * 0.1);
+      const oriEllipsoid = this.createEllipsoidMesh(
+        eePosition, oriAxes, scaledOriValues, 0x44ff44, this.ellipsoidOpacity
+      );
+      oriEllipsoid.visible = this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
+      this.scene.add(oriEllipsoid);
+
+      // Create axis arrows
+      const posAxesGroup = this.createEllipsoidAxes(eePosition, posAxes, posValues, 0x0000ff);
+      posAxesGroup.visible = this.showEllipsoidAxes && this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
+      this.scene.add(posAxesGroup);
+
+      const oriAxesGroup = this.createEllipsoidAxes(eePosition, oriAxes, scaledOriValues, 0x00ff00);
+      oriAxesGroup.visible = this.showEllipsoidAxes && this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
+      this.scene.add(oriAxesGroup);
+
+      this.manipulabilityEllipsoid = {
+        posEllipsoid,
+        oriEllipsoid,
+        posAxesGroup,
+        oriAxesGroup
+      };
+
+      // Clean up WASM vectors
+      manip.posAxes.delete();
+      manip.posValues.delete();
+      manip.oriAxes.delete();
+      manip.oriValues.delete();
+
+    } catch (error) {
+      console.error('Error creating manipulability ellipsoid:', error);
+      // Silently fail - don't show ellipsoid if there's an issue
+      this.cleanupEllipsoidVisualization();
+    }
+  }
+
+  private cleanupEllipsoidVisualization(): void {
+    if (!this.manipulabilityEllipsoid) return;
+
+    if (this.manipulabilityEllipsoid.posEllipsoid) {
+      this.scene.remove(this.manipulabilityEllipsoid.posEllipsoid);
+      this.manipulabilityEllipsoid.posEllipsoid.geometry.dispose();
+      (this.manipulabilityEllipsoid.posEllipsoid.material as THREE.Material).dispose();
+    }
+
+    if (this.manipulabilityEllipsoid.oriEllipsoid) {
+      this.scene.remove(this.manipulabilityEllipsoid.oriEllipsoid);
+      this.manipulabilityEllipsoid.oriEllipsoid.geometry.dispose();
+      (this.manipulabilityEllipsoid.oriEllipsoid.material as THREE.Material).dispose();
+    }
+
+    if (this.manipulabilityEllipsoid.posAxesGroup) {
+      this.scene.remove(this.manipulabilityEllipsoid.posAxesGroup);
+    }
+
+    if (this.manipulabilityEllipsoid.oriAxesGroup) {
+      this.scene.remove(this.manipulabilityEllipsoid.oriAxesGroup);
+    }
+
+    this.manipulabilityEllipsoid = null;
+  }
+
+  private manipulabilityToColor(value: number, min: number, max: number, useLogScale = false): THREE.Color {
+    let normalized: number;
+
+    if (useLogScale) {
+      // Logarithmic scale for condition number (spans orders of magnitude)
+      const logValue = Math.log10(value);
+      const logMin = Math.log10(min);
+      const logMax = Math.log10(max);
+      normalized = (logMax - logMin) > 0 ? (logValue - logMin) / (logMax - logMin) : 0.5;
+      // Invert: low condition number (good) → blue, high (bad) → red
+      normalized = 1 - normalized;
+    } else {
+      // Linear scale for volume
+      normalized = (max - min) > 0 ? (value - min) / (max - min) : 0.5;
+    }
+
+    // Clamp to [0, 1]
+    normalized = Math.max(0, Math.min(1, normalized));
+
+    // Map: 0 (bad) → red (0°), 1 (good) → blue (240°)
     // This creates a smooth transition: red → orange → yellow → green → cyan → blue
     const hue = normalized * 240;
 
@@ -799,11 +1152,21 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
         for (const mcPoint of this.pointCloud.data) {
           positions.push(mcPoint.position.x, mcPoint.position.y, mcPoint.position.z);
-          const color = this.manipulabilityToColor(
-            mcPoint.manipulability,
-            this.manipulabilityRange.min,
-            this.manipulabilityRange.max
-          );
+
+          // Color based on selected metric
+          let value: number, minVal: number, maxVal: number;
+          if (this.manipulabilityMetric === 'volume') {
+            value = mcPoint.manipulability;
+            minVal = this.manipulabilityRange.min;
+            maxVal = this.manipulabilityRange.max;
+          } else {
+            value = isFinite(mcPoint.conditionNumber) ? mcPoint.conditionNumber : this.conditionNumberRange.max;
+            minVal = this.conditionNumberRange.min;
+            maxVal = this.conditionNumberRange.max;
+          }
+
+          const useLogScale = this.manipulabilityMetric === 'condition';
+          const color = this.manipulabilityToColor(value, minVal, maxVal, useLogScale);
           colors.push(color.r, color.g, color.b);
         }
 
@@ -815,9 +1178,108 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  onManipulabilityEllipsoidVisibilityChange(): void {
+    if (this.showManipulabilityEllipsoid) {
+      this.createManipulabilityEllipsoidVisualization();
+    } else {
+      this.cleanupEllipsoidVisualization();
+    }
+  }
+
+  onPositionEllipsoidVisibilityChange(): void {
+    if (this.manipulabilityEllipsoid?.posEllipsoid) {
+      this.manipulabilityEllipsoid.posEllipsoid.visible =
+        this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
+    }
+    if (this.manipulabilityEllipsoid?.posAxesGroup) {
+      this.manipulabilityEllipsoid.posAxesGroup.visible =
+        this.showEllipsoidAxes && this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
+    }
+  }
+
+  onOrientationEllipsoidVisibilityChange(): void {
+    if (this.manipulabilityEllipsoid?.oriEllipsoid) {
+      this.manipulabilityEllipsoid.oriEllipsoid.visible =
+        this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
+    }
+    if (this.manipulabilityEllipsoid?.oriAxesGroup) {
+      this.manipulabilityEllipsoid.oriAxesGroup.visible =
+        this.showEllipsoidAxes && this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
+    }
+  }
+
+  onEllipsoidAxesVisibilityChange(): void {
+    if (this.manipulabilityEllipsoid?.posAxesGroup) {
+      this.manipulabilityEllipsoid.posAxesGroup.visible =
+        this.showEllipsoidAxes && this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
+    }
+    if (this.manipulabilityEllipsoid?.oriAxesGroup) {
+      this.manipulabilityEllipsoid.oriAxesGroup.visible =
+        this.showEllipsoidAxes && this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
+    }
+  }
+
+  onEllipsoidOpacityChange(): void {
+    if (this.manipulabilityEllipsoid?.posEllipsoid) {
+      (this.manipulabilityEllipsoid.posEllipsoid.material as THREE.MeshBasicMaterial).opacity =
+        this.ellipsoidOpacity;
+    }
+    if (this.manipulabilityEllipsoid?.oriEllipsoid) {
+      (this.manipulabilityEllipsoid.oriEllipsoid.material as THREE.MeshBasicMaterial).opacity =
+        this.ellipsoidOpacity;
+    }
+  }
+
+  onShowRobotChange(): void {
+    // Toggle link meshes (cylinders)
+    this.linkMeshes.forEach(mesh => {
+      mesh.visible = this.showRobot;
+    });
+
+    // Toggle joint cylinders
+    for (const joint of this.joints) {
+      const cylinder = this.scene.getObjectByName('joint_cylinder_' + joint.name);
+      if (cylinder) {
+        cylinder.visible = this.showRobot;
+      }
+    }
+  }
+
+  onShowFramesChange(): void {
+    // Toggle axes in link groups
+    this.linkGroups.forEach((group) => {
+      group.traverse((obj) => {
+        if (obj.type === 'Group' && obj !== group) {
+          // This is likely an axes group
+          obj.visible = this.showFrames;
+        }
+        if (obj instanceof THREE.ArrowHelper) {
+          obj.visible = this.showFrames;
+        }
+        if (obj instanceof CSS2DObject) {
+          obj.visible = this.showFrames;
+        }
+      });
+    });
+
+    // Toggle world axes if it exists
+    const worldAxes = this.scene.getObjectByName('world_axes');
+    if (worldAxes) {
+      worldAxes.visible = this.showFrames;
+    }
+  }
+
+  onManipulabilityMetricChange(): void {
+    // Re-color the existing point cloud with the new metric
+    if (this.pointCloud) {
+      this.createPointCloudVisualization(this.pointCloud.data);
+    }
+  }
+
   async regeneratePointCloud(): Promise<void> {
     if (!this.wasmModule || !this.kinematicTree) return;
     this.manipulabilityRange = { min: Infinity, max: -Infinity };
+    this.conditionNumberRange = { min: Infinity, max: -Infinity };
     await this.generateMonteCarloPointCloud();
   }
 
@@ -891,20 +1353,43 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       // Only compute manipulability for points that passed the filter
-      const manipulability = this.wasmModule.getPositionManipulability(
+      const manip = this.wasmModule.getManipulability(
         this.kinematicTree,
         'ee_link',
         'base_link',
         jointNamesVec
       );
 
-      points.push({ position, manipulability, jointConfig: [...jointConfig] });
+      const manipulability = manip.wPos;
+
+      // Calculate condition number from singular values
+      const posValues = [];
+      for (let k = 0; k < 3; k++) {
+        posValues.push(manip.posValues.get(k));
+      }
+      const maxValue = Math.max(...posValues);
+      const minValue = Math.min(...posValues);
+      const conditionNumber = minValue > 0 ? maxValue / minValue : Infinity;
+
+      // Clean up WASM vectors
+      manip.posAxes.delete();
+      manip.posValues.delete();
+      manip.oriAxes.delete();
+      manip.oriValues.delete();
+
+      points.push({ position, manipulability, conditionNumber, jointConfig: [...jointConfig] });
       successfulPoints++;
       attempts++;
 
       // Track range for color mapping
       this.manipulabilityRange.min = Math.min(this.manipulabilityRange.min, manipulability);
       this.manipulabilityRange.max = Math.max(this.manipulabilityRange.max, manipulability);
+
+      // Track condition number range (skip Infinity values)
+      if (isFinite(conditionNumber)) {
+        this.conditionNumberRange.min = Math.min(this.conditionNumberRange.min, conditionNumber);
+        this.conditionNumberRange.max = Math.max(this.conditionNumberRange.max, conditionNumber);
+      }
 
       // Batch progress updates (yield to UI every batch)
       if (successfulPoints % batchSize === 0) {
@@ -923,6 +1408,20 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Only create visualization if we have points and weren't canceled
     if (points.length > 0 && !this.cancelGeneration) {
+      // For condition numbers, use 95th percentile as max to avoid outlier skew
+      const finiteConditionNumbers = points
+        .map(p => p.conditionNumber)
+        .filter(cn => isFinite(cn))
+        .sort((a, b) => a - b);
+
+      if (finiteConditionNumbers.length > 0) {
+        const p95Index = Math.floor(finiteConditionNumbers.length * 0.95);
+        this.conditionNumberRange.max = finiteConditionNumbers[p95Index];
+      }
+
+      console.log('Manipulability range:', this.manipulabilityRange);
+      console.log('Condition number range:', this.conditionNumberRange);
+      console.log('Condition number 95th percentile used as max');
       this.createPointCloudVisualization(points);
     }
 

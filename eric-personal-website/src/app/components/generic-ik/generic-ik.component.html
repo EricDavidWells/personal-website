@@ -26,6 +26,22 @@
                             }
                         </select>
                     </div>
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showRobot"
+                                   (change)="onShowRobotChange()" />
+                            Show Robot
+                        </label>
+                    </div>
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showFrames"
+                                   (change)="onShowFramesChange()" />
+                            Show Frames
+                        </label>
+                    </div>
                 </div>
             </fieldset>
 
@@ -84,6 +100,16 @@
                     </div>
 
                     <div class="control-row">
+                        <label for="manipMetric">Manipulability Metric:</label>
+                        <select id="manipMetric"
+                                [(ngModel)]="manipulabilityMetric"
+                                (change)="onManipulabilityMetricChange()">
+                            <option value="volume">Volume (w)</option>
+                            <option value="condition">Condition Number (κ)</option>
+                        </select>
+                    </div>
+
+                    <div class="control-row">
                         <label for="pointCount">Point Count: {{ pointCloudCount }}</label>
                         <input type="range"
                                id="pointCount"
@@ -122,20 +148,105 @@
 
                     @if (pointCloud && !isGeneratingPointCloud) {
                         <div class="manip-info">
-                            <div class="manip-range">
-                                <span>Manipulability Range:</span>
-                                <span class="manip-value">
-                                    {{ manipulabilityRange.min | number:'1.4-4' }} -
-                                    {{ manipulabilityRange.max | number:'1.4-4' }}
-                                </span>
-                            </div>
-                            <div class="color-legend">
-                                <div class="legend-gradient"></div>
-                                <div class="legend-labels">
-                                    <span>Singular (Low)</span>
-                                    <span>Optimal (High)</span>
+                            @if (manipulabilityMetric === 'volume') {
+                                <div class="manip-range">
+                                    <span>Volume Range:</span>
+                                    <span class="manip-value">
+                                        {{ manipulabilityRange.min | number:'1.4-4' }} -
+                                        {{ manipulabilityRange.max | number:'1.4-4' }}
+                                    </span>
                                 </div>
-                            </div>
+                                <div class="color-legend">
+                                    <div class="legend-gradient"></div>
+                                    <div class="legend-labels">
+                                        <span>Singular (Low)</span>
+                                        <span>Optimal (High)</span>
+                                    </div>
+                                </div>
+                            }
+                            @if (manipulabilityMetric === 'condition') {
+                                <div class="manip-range">
+                                    <span>Condition Number Range:</span>
+                                    <span class="manip-value">
+                                        {{ conditionNumberRange.min | number:'1.2-2' }} -
+                                        {{ conditionNumberRange.max | number:'1.2-2' }}
+                                    </span>
+                                </div>
+                                <div class="color-legend">
+                                    <div class="legend-gradient"></div>
+                                    <div class="legend-labels">
+                                        <span>Ill-conditioned (High)</span>
+                                        <span>Well-conditioned (Low)</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>Manipulability Ellipsoid</legend>
+
+                <div class="workspace-controls">
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showManipulabilityEllipsoid"
+                                   (change)="onManipulabilityEllipsoidVisibilityChange()" />
+                            Show Ellipsoid
+                        </label>
+                    </div>
+
+                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showPositionEllipsoid"
+                                   (change)="onPositionEllipsoidVisibilityChange()"
+                                   [disabled]="!showManipulabilityEllipsoid" />
+                            Position Ellipsoid (Blue)
+                        </label>
+                    </div>
+
+                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showOrientationEllipsoid"
+                                   (change)="onOrientationEllipsoidVisibilityChange()"
+                                   [disabled]="!showManipulabilityEllipsoid" />
+                            Orientation Ellipsoid (Green)
+                        </label>
+                    </div>
+
+                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showEllipsoidAxes"
+                                   (change)="onEllipsoidAxesVisibilityChange()"
+                                   [disabled]="!showManipulabilityEllipsoid" />
+                            Show Principal Axes
+                        </label>
+                    </div>
+
+                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
+                        <label for="ellipsoidOpacity">
+                            Opacity: {{ ellipsoidOpacity | number:'1.1-1' }}
+                        </label>
+                        <input type="range"
+                               id="ellipsoidOpacity"
+                               [min]="0.1"
+                               [max]="1.0"
+                               step="0.05"
+                               [(ngModel)]="ellipsoidOpacity"
+                               (ngModelChange)="onEllipsoidOpacityChange()"
+                               [disabled]="!showManipulabilityEllipsoid" />
+                    </div>
+
+                    @if (showManipulabilityEllipsoid) {
+                        <div class="info-text">
+                            <strong>Blue:</strong> Position ellipsoid - directions of easiest linear motion.<br>
+                            <strong>Green:</strong> Orientation ellipsoid - directions of easiest rotation (scaled 10x).<br>
+                            Near singularities, ellipsoids become flat/needle-shaped.
                         </div>
                     }
                 </div>
