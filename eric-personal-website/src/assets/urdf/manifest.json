@@ -1,0 +1,22 @@
+[
+  {
+    "name": "ur5",
+    "label": "UR5 (6DOF)"
+  },
+  {
+    "name": "simple_3dof_a_f_f",
+    "label": "simple_3dof_a_f_f"
+  },
+  {
+    "name": "simple_3dof_f_a_f",
+    "label": "simple_3dof_f_a_f"
+  },
+  {
+    "name": "simple_3dof_f_a_f45",
+    "label": "simple_3dof_f_a_f45"
+  },
+  {
+    "name": "simple_3dof_f_a_fn45",
+    "label": "simple_3dof_f_a_fn45"
+  }
+]

@@ -100,12 +100,14 @@
                     </div>
 
                     <div class="control-row">
-                        <label for="manipMetric">Manipulability Metric:</label>
+                        <label for="manipMetric">Point Cloud Color:</label>
                         <select id="manipMetric"
                                 [(ngModel)]="manipulabilityMetric"
                                 (change)="onManipulabilityMetricChange()">
-                            <option value="volume">Volume (w)</option>
-                            <option value="condition">Condition Number (κ)</option>
+                            <option value="volume">Position Volume (wₚ)</option>
+                            <option value="condition">Position Condition (κₚ)</option>
+                            <option value="orientation_volume">Orientation Volume (wₒ)</option>
+                            <option value="orientation_condition">Orientation Condition (κₒ)</option>
                         </select>
                     </div>
 
@@ -150,7 +152,7 @@
                         <div class="manip-info">
                             @if (manipulabilityMetric === 'volume') {
                                 <div class="manip-range">
-                                    <span>Volume Range:</span>
+                                    <span>Position Volume Range:</span>
                                     <span class="manip-value">
                                         {{ manipulabilityRange.min | number:'1.4-4' }} -
                                         {{ manipulabilityRange.max | number:'1.4-4' }}
@@ -166,7 +168,7 @@
                             }
                             @if (manipulabilityMetric === 'condition') {
                                 <div class="manip-range">
-                                    <span>Condition Number Range:</span>
+                                    <span>Position Condition Range:</span>
                                     <span class="manip-value">
                                         {{ conditionNumberRange.min | number:'1.2-2' }} -
                                         {{ conditionNumberRange.max | number:'1.2-2' }}
@@ -175,8 +177,40 @@
                                 <div class="color-legend">
                                     <div class="legend-gradient"></div>
                                     <div class="legend-labels">
-                                        <span>Ill-conditioned (High)</span>
-                                        <span>Well-conditioned (Low)</span>
+                                        <span>Ill-conditioned (Low)</span>
+                                        <span>Well-conditioned (High)</span>
+                                    </div>
+                                </div>
+                            }
+                            @if (manipulabilityMetric === 'orientation_volume') {
+                                <div class="manip-range">
+                                    <span>Orientation Volume Range:</span>
+                                    <span class="manip-value">
+                                        {{ orientationManipulabilityRange.min | number:'1.4-4' }} -
+                                        {{ orientationManipulabilityRange.max | number:'1.4-4' }}
+                                    </span>
+                                </div>
+                                <div class="color-legend">
+                                    <div class="legend-gradient"></div>
+                                    <div class="legend-labels">
+                                        <span>Singular (Low)</span>
+                                        <span>Optimal (High)</span>
+                                    </div>
+                                </div>
+                            }
+                            @if (manipulabilityMetric === 'orientation_condition') {
+                                <div class="manip-range">
+                                    <span>Orientation Condition Range:</span>
+                                    <span class="manip-value">
+                                        {{ orientationConditionNumberRange.min | number:'1.2-2' }} -
+                                        {{ orientationConditionNumberRange.max | number:'1.2-2' }}
+                                    </span>
+                                </div>
+                                <div class="color-legend">
+                                    <div class="legend-gradient"></div>
+                                    <div class="legend-labels">
+                                        <span>Ill-conditioned (Low)</span>
+                                        <span>Well-conditioned (High)</span>
                                     </div>
                                 </div>
                             }
@@ -216,30 +250,6 @@
                                    [disabled]="!showManipulabilityEllipsoid" />
                             Orientation Ellipsoid (Green)
                         </label>
-                    </div>
-
-                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="showEllipsoidAxes"
-                                   (change)="onEllipsoidAxesVisibilityChange()"
-                                   [disabled]="!showManipulabilityEllipsoid" />
-                            Show Principal Axes
-                        </label>
-                    </div>
-
-                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
-                        <label for="ellipsoidOpacity">
-                            Opacity: {{ ellipsoidOpacity | number:'1.1-1' }}
-                        </label>
-                        <input type="range"
-                               id="ellipsoidOpacity"
-                               [min]="0.1"
-                               [max]="1.0"
-                               step="0.05"
-                               [(ngModel)]="ellipsoidOpacity"
-                               (ngModelChange)="onEllipsoidOpacityChange()"
-                               [disabled]="!showManipulabilityEllipsoid" />
                     </div>
 
                     @if (showManipulabilityEllipsoid) {

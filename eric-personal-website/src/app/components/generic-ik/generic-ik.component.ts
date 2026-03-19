@@ -69,6 +69,8 @@ interface MonteCarloPoint {
   position: THREE.Vector3;
   manipulability: number;
   conditionNumber: number;
+  orientationManipulability: number;
+  orientationConditionNumber: number;
   jointConfig: number[];
 }
 
@@ -117,6 +119,8 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   pointCloud: PointCloudVisualization | null = null;
   manipulabilityRange = { min: Infinity, max: -Infinity };
   conditionNumberRange = { min: Infinity, max: -Infinity };
+  orientationManipulabilityRange = { min: Infinity, max: -Infinity };
+  orientationConditionNumberRange = { min: Infinity, max: -Infinity };
 
   manipulabilityEllipsoid: EllipsoidVisualization | null = null;
 
@@ -130,6 +134,11 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   private dragArrow: THREE.ArrowHelper | null = null;
   private dragStartZ = 0;
   private dragStartMouseY = 0;
+  private selectedPointMarker: THREE.Mesh | null = null;
+  private isDraggingPoints = false;
+  private lastUpdateTime = 0;
+  private readonly UPDATE_THROTTLE_MS = 50; // 20fps - slower to prevent WASM corruption
+  private isUpdatingConfiguration = false;
 
   // UI controls
   showPointCloud = false;
@@ -139,19 +148,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   showClippingPlanes = false;
   enablePlaneFiltering = false;
   selectedUrdf = 'ur5';
-  availableUrdfs = [
-    { name: 'ur5', label: 'UR5 (6DOF)' },
-    { name: 'simple_3dof', label: 'Simple 3DOF' }
-  ];
-  manipulabilityMetric: 'volume' | 'condition' = 'volume';
+  availableUrdfs: Array<{ name: string; label: string }> = [];
+  manipulabilityMetric: 'volume' | 'condition' | 'orientation_volume' | 'orientation_condition' = 'volume';
   private cancelGeneration = false;
 
   // Manipulability ellipsoid controls
   showManipulabilityEllipsoid = true;
   showPositionEllipsoid = true;
   showOrientationEllipsoid = false;
-  showEllipsoidAxes = true;
-  ellipsoidOpacity = 0.3;
 
   // Robot and frame visibility controls
   showRobot = true;
@@ -165,11 +169,32 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.project = PROJECTS.find(p => p.slug === 'generic-ik');
   }
 
-  ngAfterViewInit(): void {
+  async ngAfterViewInit(): Promise<void> {
     if (!this.isBrowser) return;
     this.initScene();
     this.animate();
+    await this.loadUrdfManifest();
     this.loadWasm();
+  }
+
+  private async loadUrdfManifest(): Promise<void> {
+    try {
+      const response = await fetch('/assets/urdf/manifest.json');
+      this.availableUrdfs = await response.json();
+
+      // Ensure selected URDF is valid
+      if (!this.availableUrdfs.find(u => u.name === this.selectedUrdf)) {
+        this.selectedUrdf = this.availableUrdfs[0]?.name || 'ur5';
+      }
+    } catch (error) {
+      console.error('Failed to load URDF manifest, using defaults:', error);
+      // Fallback to hardcoded list
+      this.availableUrdfs = [
+        { name: 'ur5', label: 'UR5 (6DOF)' },
+        { name: 'simple_3dof_a_f_f', label: 'Simple 3DOF (Active-Fixed-Fixed)' },
+        { name: 'simple_3dof_f_a_f', label: 'Simple 3DOF (Fixed-Active-Fixed)' }
+      ];
+    }
   }
 
   ngOnDestroy(): void {
@@ -178,8 +203,30 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resizeObserver?.disconnect();
     this.controls?.dispose();
     this.renderer?.dispose();
+
+    // Clean up CSS2DObject labels before removing renderer
+    this.linkGroups.forEach(group => {
+      group.traverse((obj) => {
+        if (obj instanceof CSS2DObject) {
+          obj.removeFromParent();
+          obj.element.remove();
+        }
+      });
+      group.removeFromParent();
+    });
+
+    // Clean up world axes labels
+    const worldAxes = this.scene?.getObjectByName('world_axes');
+    if (worldAxes) {
+      worldAxes.traverse((obj) => {
+        if (obj instanceof CSS2DObject) {
+          obj.removeFromParent();
+          obj.element.remove();
+        }
+      });
+    }
+
     this.labelRenderer?.domElement.remove();
-    this.linkGroups.forEach(group => group.removeFromParent());
 
     // Clean up point cloud
     if (this.pointCloud) {
@@ -210,14 +257,33 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Clean up ellipsoid
     this.cleanupEllipsoidVisualization();
+
+    // Clean up selected point marker
+    if (this.selectedPointMarker) {
+      this.scene.remove(this.selectedPointMarker);
+      this.selectedPointMarker.geometry.dispose();
+      (this.selectedPointMarker.material as THREE.Material).dispose();
+      this.selectedPointMarker = null;
+    }
   }
 
   onJointChange(): void {
     if (!this.wasmModule || !this.kinematicTree) return;
-    for (const joint of this.joints) {
-      this.kinematicTree.updateTheta(joint.name, joint.value);
+
+    // Prevent conflicts with point configuration updates
+    if (this.isUpdatingConfiguration) return;
+
+    this.isUpdatingConfiguration = true;
+    try {
+      for (const joint of this.joints) {
+        this.kinematicTree.updateTheta(joint.name, joint.value);
+      }
+      this.updateRobotVisualization();
+    } catch (error) {
+      console.error('Error updating joint:', error);
+    } finally {
+      this.isUpdatingConfiguration = false;
     }
-    this.updateRobotVisualization();
   }
 
   onDividerMouseDown(event: MouseEvent): void {
@@ -264,29 +330,73 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   private async loadUrdf(urdfName: string): Promise<void> {
     if (!this.wasmModule) return;
 
-    // Clear existing robot
-    this.clearRobot();
+    try {
+      // Clear existing robot
+      this.clearRobot();
 
-    const urdfResponse = await fetch(`/assets/urdf/${urdfName}.urdf`);
-    const urdfContent = await urdfResponse.text();
-    this.kinematicTree = this.wasmModule.loadUrdfFromString(urdfContent);
+      // Delete old kinematic tree to free WASM memory
+      if (this.kinematicTree) {
+        try {
+          this.kinematicTree.delete();
+        } catch (e) {
+          console.warn('Failed to delete kinematic tree:', e);
+        }
+        this.kinematicTree = null;
+      }
 
-    this.extractJointInfo();
-    this.buildRobot();
+      const urdfResponse = await fetch(`/assets/urdf/${urdfName}.urdf`);
 
-    // Clear point cloud when switching robots
-    if (this.pointCloud) {
-      this.scene.remove(this.pointCloud.points);
-      this.pointCloud.geometry.dispose();
-      this.pointCloud.material.dispose();
-      this.pointCloud = null;
-      this.manipulabilityRange = { min: Infinity, max: -Infinity };
+      if (!urdfResponse.ok) {
+        throw new Error(`Failed to fetch URDF: ${urdfResponse.status} ${urdfResponse.statusText}`);
+      }
+
+      const urdfContent = await urdfResponse.text();
+
+      if (!urdfContent || urdfContent.trim().length === 0) {
+        throw new Error('URDF file is empty');
+      }
+
+      try {
+        this.kinematicTree = this.wasmModule.loadUrdfFromString(urdfContent);
+      } catch (wasmError) {
+        throw new Error(`Failed to parse URDF: ${wasmError}`);
+      }
+
+      this.extractJointInfo();
+      this.buildRobot();
+
+      // Clear point cloud when switching robots
+      if (this.pointCloud) {
+        this.scene.remove(this.pointCloud.points);
+        this.pointCloud.geometry.dispose();
+        this.pointCloud.material.dispose();
+        this.pointCloud = null;
+        this.manipulabilityRange = { min: Infinity, max: -Infinity };
+        this.conditionNumberRange = { min: Infinity, max: -Infinity };
+        this.orientationManipulabilityRange = { min: Infinity, max: -Infinity };
+        this.orientationConditionNumberRange = { min: Infinity, max: -Infinity };
+      }
+
+      // Clear any previous error
+      this.errorMessage = null;
+    } catch (error: any) {
+      const errorMsg = `Failed to load URDF "${urdfName}": ${error.message || String(error)}`;
+      console.error(errorMsg, error);
+      this.errorMessage = errorMsg;
+      throw error;
     }
   }
 
   private clearRobot(): void {
     // Remove all link groups and meshes
     this.linkGroups.forEach(group => {
+      // Clean up CSS2DObject labels before removing group
+      group.traverse((obj) => {
+        if (obj instanceof CSS2DObject) {
+          obj.removeFromParent();
+          obj.element.remove();
+        }
+      });
       this.scene.remove(group);
     });
     this.linkGroups.clear();
@@ -313,6 +423,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Clean up ellipsoid
     this.cleanupEllipsoidVisualization();
+
+    // Clean up selected point marker
+    if (this.selectedPointMarker) {
+      this.scene.remove(this.selectedPointMarker);
+      this.selectedPointMarker.geometry.dispose();
+      (this.selectedPointMarker.material as THREE.Material).dispose();
+      this.selectedPointMarker = null;
+    }
   }
 
   async onUrdfChange(): Promise<void> {
@@ -321,6 +439,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       await this.loadUrdf(this.selectedUrdf);
     } catch (e: any) {
       this.errorMessage = e.message || String(e);
+
+      // If URDF loading failed with a WASM error, try reloading the WASM module
+      console.warn('URDF load failed, attempting WASM module reload...');
+      try {
+        await this.loadWasm();
+      } catch (reloadError) {
+        console.error('WASM reload also failed:', reloadError);
+      }
     }
     this.loading = false;
   }
@@ -433,6 +559,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     this.updateRobotVisualization();
+
+    // Set initial visibility state for frames
+    this.onShowFramesChange();
   }
 
   private updateRobotVisualization(): void {
@@ -590,6 +719,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.onResize();
 
     this.initClippingPlanes();
+
+    // Set initial frame visibility (will be called again when robot loads, but sets initial state for world axes)
+    this.onShowFramesChange();
   }
 
   private initClippingPlanes(): void {
@@ -639,84 +771,236 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Add mouse event listeners for dragging arrows
     const canvas = this.renderer.domElement;
 
-    canvas.addEventListener('mousedown', (event) => this.onArrowMouseDown(event), false);
-    canvas.addEventListener('mousemove', (event) => this.onArrowMouseMove(event), false);
-    canvas.addEventListener('mouseup', () => this.onArrowMouseUp(), false);
+    canvas.addEventListener('mousedown', (event) => this.onCanvasMouseDown(event), false);
+    canvas.addEventListener('mousemove', (event) => this.onCanvasMouseMove(event), false);
+    canvas.addEventListener('mouseup', () => this.onCanvasMouseUp(), false);
     canvas.addEventListener('contextmenu', (event) => event.preventDefault(), false);
   }
 
-  private onArrowMouseDown(event: MouseEvent): void {
+  private onCanvasMouseDown(event: MouseEvent): void {
     // Only respond to left-click
     if (event.button !== 0) return;
-    if (!this.showClippingPlanes) return;
 
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    this.raycaster.setFromCamera(this.mouse, this.camera);
+    // Check if clicking on arrows first (priority over points)
+    if (this.showClippingPlanes) {
+      this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // Check intersections with arrow cones only (the head)
-    const arrowObjects: THREE.Object3D[] = [];
-    if (this.arrow1) {
-      // Only add the cone (first child is the line, second is the cone)
-      const cone = this.arrow1.children.find(child => child.type === 'Mesh');
-      if (cone) arrowObjects.push(cone);
-    }
-    if (this.arrow2) {
-      const cone = this.arrow2.children.find(child => child.type === 'Mesh');
-      if (cone) arrowObjects.push(cone);
-    }
-
-    const intersects = this.raycaster.intersectObjects(arrowObjects, false);
-
-    if (intersects.length > 0) {
-      // Find which arrow was clicked
-      const clickedObject = intersects[0].object;
-      if (this.arrow1?.children.includes(clickedObject)) {
-        this.dragArrow = this.arrow1;
-      } else if (this.arrow2?.children.includes(clickedObject)) {
-        this.dragArrow = this.arrow2;
+      const arrowObjects: THREE.Object3D[] = [];
+      if (this.arrow1) {
+        const cone = this.arrow1.children.find(child => child.type === 'Mesh');
+        if (cone) arrowObjects.push(cone);
+      }
+      if (this.arrow2) {
+        const cone = this.arrow2.children.find(child => child.type === 'Mesh');
+        if (cone) arrowObjects.push(cone);
       }
 
-      if (this.dragArrow) {
-        this.dragStartZ = this.dragArrow.position.z;
-        this.dragStartMouseY = this.mouse.y;
+      const intersects = this.raycaster.intersectObjects(arrowObjects, false);
+
+      if (intersects.length > 0) {
+        // Find which arrow was clicked
+        const clickedObject = intersects[0].object;
+        if (this.arrow1?.children.includes(clickedObject)) {
+          this.dragArrow = this.arrow1;
+        } else if (this.arrow2?.children.includes(clickedObject)) {
+          this.dragArrow = this.arrow2;
+        }
+
+        if (this.dragArrow) {
+          this.dragStartZ = this.dragArrow.position.z;
+          this.dragStartMouseY = this.mouse.y;
+          this.controls.enabled = false;
+          event.preventDefault();
+          return;
+        }
+      }
+    }
+
+    // If not clicking on arrows, check for point cloud
+    if (this.pointCloud && this.pointCloud.visible) {
+      const selectedPoint = this.findClosestPointInScreenSpace(this.mouse.x, this.mouse.y);
+      if (selectedPoint) {
+        this.isDraggingPoints = true;
         this.controls.enabled = false;
+        this.applyPointConfiguration(selectedPoint);
         event.preventDefault();
       }
     }
   }
 
-  private onArrowMouseMove(event: MouseEvent): void {
-    if (!this.dragArrow) return;
-
+  private onCanvasMouseMove(event: MouseEvent): void {
     const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    // Map mouse Y movement to Z-axis movement
-    const deltaMouseY = this.mouse.y - this.dragStartMouseY;
-    const newZ = this.dragStartZ + deltaMouseY * 2; // Scale factor for sensitivity
+    // Handle arrow dragging
+    if (this.dragArrow) {
+      // Map mouse Y movement to Z-axis movement
+      const deltaMouseY = this.mouse.y - this.dragStartMouseY;
+      const newZ = this.dragStartZ + deltaMouseY * 2; // Scale factor for sensitivity
 
-    // Update arrow and corresponding plane position
-    this.dragArrow.position.z = newZ;
+      // Update arrow and corresponding plane position
+      this.dragArrow.position.z = newZ;
 
-    if (this.dragArrow === this.arrow1 && this.plane1) {
-      this.plane1.position.z = newZ;
-    } else if (this.dragArrow === this.arrow2 && this.plane2) {
-      this.plane2.position.z = newZ;
+      if (this.dragArrow === this.arrow1 && this.plane1) {
+        this.plane1.position.z = newZ;
+      } else if (this.dragArrow === this.arrow2 && this.plane2) {
+        this.plane2.position.z = newZ;
+      }
+
+      if (this.enablePlaneFiltering) {
+        this.updatePointCloudFiltering();
+      }
+      return;
     }
 
-    if (this.enablePlaneFiltering) {
-      this.updatePointCloudFiltering();
+    // Handle point cloud dragging (throttled to prevent overwhelming WASM)
+    if (this.isDraggingPoints && this.pointCloud && this.pointCloud.visible) {
+      const now = performance.now();
+      if (now - this.lastUpdateTime >= this.UPDATE_THROTTLE_MS) {
+        const selectedPoint = this.findClosestPointInScreenSpace(this.mouse.x, this.mouse.y);
+        if (selectedPoint) {
+          this.applyPointConfiguration(selectedPoint);
+          this.lastUpdateTime = now;
+        }
+      }
     }
   }
 
-  private onArrowMouseUp(): void {
-    if (this.dragArrow) {
+  private onCanvasMouseUp(): void {
+    if (this.dragArrow || this.isDraggingPoints) {
       this.dragArrow = null;
+      this.isDraggingPoints = false;
       this.controls.enabled = true;
     }
+  }
+
+  private findClosestPointInScreenSpace(mouseX: number, mouseY: number): MonteCarloPoint | null {
+    if (!this.pointCloud) return null;
+
+    let closestPoint: MonteCarloPoint | null = null;
+    let minDepth = Infinity;
+    const clickThreshold = 0.03; // ~15 pixels at 1920px width
+
+    // Temporary vector for projection (reuse to avoid allocations)
+    const projected = new THREE.Vector3();
+
+    for (const point of this.pointCloud.data) {
+      // Project point to screen space
+      projected.copy(point.position).project(this.camera);
+
+      // Calculate screen-space distance
+      const dx = projected.x - mouseX;
+      const dy = projected.y - mouseY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // Check if within threshold
+      if (distance < clickThreshold) {
+        // Among points within threshold, select the one closest to camera (smallest Z)
+        if (projected.z < minDepth) {
+          minDepth = projected.z;
+          closestPoint = point;
+        }
+      }
+    }
+
+    return closestPoint;
+  }
+
+  private applyPointConfiguration(point: MonteCarloPoint): void {
+    // Prevent re-entrant calls that can corrupt WASM memory
+    if (this.isUpdatingConfiguration) {
+      return;
+    }
+
+    if (!this.wasmModule || !this.kinematicTree) return;
+
+    // Validate point configuration before applying
+    if (!point.jointConfig || point.jointConfig.length !== this.joints.length) {
+      console.warn('Invalid joint configuration length');
+      return;
+    }
+
+    // Validate all values are finite numbers within bounds
+    for (let i = 0; i < this.joints.length; i++) {
+      const value = point.jointConfig[i];
+      if (!isFinite(value) || value < this.joints[i].lower || value > this.joints[i].upper) {
+        console.warn(`Invalid joint value at index ${i}: ${value}`);
+        return;
+      }
+    }
+
+    this.isUpdatingConfiguration = true;
+
+    try {
+      console.log('Jumping to configuration:', {
+        manipulability: point.manipulability.toFixed(6),
+        conditionNumber: point.conditionNumber.toFixed(2),
+        config: point.jointConfig.map(v => (v * 180 / Math.PI).toFixed(1) + '°')
+      });
+
+      // Update joint values in UI
+      for (let i = 0; i < this.joints.length; i++) {
+        this.joints[i].value = point.jointConfig[i];
+      }
+
+      // Update kinematic tree with error handling for each joint
+      for (let i = 0; i < this.joints.length; i++) {
+        try {
+          this.kinematicTree.updateTheta(this.joints[i].name, point.jointConfig[i]);
+        } catch (error) {
+          console.error(`Failed to update theta for joint ${this.joints[i].name}:`, error);
+          this.isUpdatingConfiguration = false;
+          return; // Stop if any update fails
+        }
+      }
+
+      // Update robot visualization
+      this.updateRobotVisualization();
+
+      // Highlight selected point
+      this.highlightSelectedPoint(point);
+    } catch (error) {
+      console.error('Error applying point configuration:', error);
+    } finally {
+      this.isUpdatingConfiguration = false;
+    }
+  }
+
+  private highlightSelectedPoint(point: MonteCarloPoint): void {
+    // Remove previous marker
+    if (this.selectedPointMarker) {
+      this.scene.remove(this.selectedPointMarker);
+      this.selectedPointMarker.geometry.dispose();
+      (this.selectedPointMarker.material as THREE.Material).dispose();
+    }
+
+    // Create highlight sphere at selected point
+    const geometry = new THREE.SphereGeometry(0.03, 16, 12);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffff00,  // Yellow highlight
+      transparent: true,
+      opacity: 0.8,
+      depthTest: false  // Always visible
+    });
+
+    this.selectedPointMarker = new THREE.Mesh(geometry, material);
+    this.selectedPointMarker.position.copy(point.position);
+    this.scene.add(this.selectedPointMarker);
+
+    // Fade out after 2 seconds
+    setTimeout(() => {
+      if (this.selectedPointMarker) {
+        this.scene.remove(this.selectedPointMarker);
+        this.selectedPointMarker.geometry.dispose();
+        (this.selectedPointMarker.material as THREE.Material).dispose();
+        this.selectedPointMarker = null;
+      }
+    }, 2000);
   }
 
   private animate(): void {
@@ -875,20 +1159,31 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Color mapping based on selected metric
       let value: number, minVal: number, maxVal: number;
-      if (this.manipulabilityMetric === 'volume') {
-        value = mcPoint.manipulability;
-        minVal = this.manipulabilityRange.min;
-        maxVal = this.manipulabilityRange.max;
-      } else {
-        // Condition number: lower is better (use log scale)
-        value = isFinite(mcPoint.conditionNumber) ? mcPoint.conditionNumber : this.conditionNumberRange.max;
-        minVal = this.conditionNumberRange.min;
-        maxVal = this.conditionNumberRange.max;
+      switch (this.manipulabilityMetric) {
+        case 'volume':
+          value = mcPoint.manipulability;
+          minVal = this.manipulabilityRange.min;
+          maxVal = this.manipulabilityRange.max;
+          break;
+        case 'condition':
+          value = mcPoint.conditionNumber;
+          minVal = this.conditionNumberRange.min;
+          maxVal = this.conditionNumberRange.max;
+          break;
+        case 'orientation_volume':
+          value = mcPoint.orientationManipulability;
+          minVal = this.orientationManipulabilityRange.min;
+          maxVal = this.orientationManipulabilityRange.max;
+          break;
+        case 'orientation_condition':
+          value = mcPoint.orientationConditionNumber;
+          minVal = this.orientationConditionNumberRange.min;
+          maxVal = this.orientationConditionNumberRange.max;
+          break;
       }
 
       // Color mapping: Blue (good) → Red (bad/singularities)
-      const useLogScale = this.manipulabilityMetric === 'condition';
-      const color = this.manipulabilityToColor(value, minVal, maxVal, useLogScale);
+      const color = this.manipulabilityToColor(value, minVal, maxVal);
       colors.push(color.r, color.g, color.b);
     }
 
@@ -952,20 +1247,30 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
         // Color based on selected metric
         let value: number, minVal: number, maxVal: number;
-        if (this.manipulabilityMetric === 'volume') {
-          value = this.pointCloud.data[i].manipulability;
-          minVal = this.manipulabilityRange.min;
-          maxVal = this.manipulabilityRange.max;
-        } else {
-          value = isFinite(this.pointCloud.data[i].conditionNumber)
-            ? this.pointCloud.data[i].conditionNumber
-            : this.conditionNumberRange.max;
-          minVal = this.conditionNumberRange.min;
-          maxVal = this.conditionNumberRange.max;
+        switch (this.manipulabilityMetric) {
+          case 'volume':
+            value = this.pointCloud.data[i].manipulability;
+            minVal = this.manipulabilityRange.min;
+            maxVal = this.manipulabilityRange.max;
+            break;
+          case 'condition':
+            value = this.pointCloud.data[i].conditionNumber;
+            minVal = this.conditionNumberRange.min;
+            maxVal = this.conditionNumberRange.max;
+            break;
+          case 'orientation_volume':
+            value = this.pointCloud.data[i].orientationManipulability;
+            minVal = this.orientationManipulabilityRange.min;
+            maxVal = this.orientationManipulabilityRange.max;
+            break;
+          case 'orientation_condition':
+            value = this.pointCloud.data[i].orientationConditionNumber;
+            minVal = this.orientationConditionNumberRange.min;
+            maxVal = this.orientationConditionNumberRange.max;
+            break;
         }
 
-        const useLogScale = this.manipulabilityMetric === 'condition';
-        const color = this.manipulabilityToColor(value, minVal, maxVal, useLogScale);
+        const color = this.manipulabilityToColor(value, minVal, maxVal);
         newColors.push(color.r, color.g, color.b);
       }
     }
@@ -1028,28 +1333,28 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       const oriAxes = this.extractAxesFromVector(manip.oriAxes);
       const oriValues = this.extractValuesFromVector(manip.oriValues);
 
-      // Create position ellipsoid (blue)
+      // Create position ellipsoid (blue) with fixed 0.3 opacity
       const posEllipsoid = this.createEllipsoidMesh(
-        eePosition, posAxes, posValues, 0x4488ff, this.ellipsoidOpacity
+        eePosition, posAxes, posValues, 0x4488ff, 0.3
       );
       posEllipsoid.visible = this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
       this.scene.add(posEllipsoid);
 
-      // Create orientation ellipsoid (green, scaled by 0.1 for visibility)
+      // Create orientation ellipsoid (green, scaled by 0.1 for visibility) with fixed 0.3 opacity
       const scaledOriValues = oriValues.map(v => v * 0.1);
       const oriEllipsoid = this.createEllipsoidMesh(
-        eePosition, oriAxes, scaledOriValues, 0x44ff44, this.ellipsoidOpacity
+        eePosition, oriAxes, scaledOriValues, 0x44ff44, 0.3
       );
       oriEllipsoid.visible = this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
       this.scene.add(oriEllipsoid);
 
-      // Create axis arrows
+      // Create axis arrows (always hidden)
       const posAxesGroup = this.createEllipsoidAxes(eePosition, posAxes, posValues, 0x0000ff);
-      posAxesGroup.visible = this.showEllipsoidAxes && this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
+      posAxesGroup.visible = false;
       this.scene.add(posAxesGroup);
 
       const oriAxesGroup = this.createEllipsoidAxes(eePosition, oriAxes, scaledOriValues, 0x00ff00);
-      oriAxesGroup.visible = this.showEllipsoidAxes && this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
+      oriAxesGroup.visible = false;
       this.scene.add(oriAxesGroup);
 
       this.manipulabilityEllipsoid = {
@@ -1098,28 +1403,16 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.manipulabilityEllipsoid = null;
   }
 
-  private manipulabilityToColor(value: number, min: number, max: number, useLogScale = false): THREE.Color {
-    let normalized: number;
-
-    if (useLogScale) {
-      // Logarithmic scale for condition number (spans orders of magnitude)
-      const logValue = Math.log10(value);
-      const logMin = Math.log10(min);
-      const logMax = Math.log10(max);
-      normalized = (logMax - logMin) > 0 ? (logValue - logMin) / (logMax - logMin) : 0.5;
-      // Invert: low condition number (good) → blue, high (bad) → red
-      normalized = 1 - normalized;
-    } else {
-      // Linear scale for volume
-      normalized = (max - min) > 0 ? (value - min) / (max - min) : 0.5;
-    }
+  private manipulabilityToColor(value: number, min: number, max: number): THREE.Color {
+    // Linear scale for both manipulability and reciprocal condition number (higher is better)
+    const normalized = (max - min) > 0 ? (value - min) / (max - min) : 0.5;
 
     // Clamp to [0, 1]
-    normalized = Math.max(0, Math.min(1, normalized));
+    const clampedNormalized = Math.max(0, Math.min(1, normalized));
 
     // Map: 0 (bad) → red (0°), 1 (good) → blue (240°)
     // This creates a smooth transition: red → orange → yellow → green → cyan → blue
-    const hue = normalized * 240;
+    const hue = clampedNormalized * 240;
 
     return new THREE.Color().setHSL(hue / 360, 1.0, 0.5);
   }
@@ -1155,18 +1448,30 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
           // Color based on selected metric
           let value: number, minVal: number, maxVal: number;
-          if (this.manipulabilityMetric === 'volume') {
-            value = mcPoint.manipulability;
-            minVal = this.manipulabilityRange.min;
-            maxVal = this.manipulabilityRange.max;
-          } else {
-            value = isFinite(mcPoint.conditionNumber) ? mcPoint.conditionNumber : this.conditionNumberRange.max;
-            minVal = this.conditionNumberRange.min;
-            maxVal = this.conditionNumberRange.max;
+          switch (this.manipulabilityMetric) {
+            case 'volume':
+              value = mcPoint.manipulability;
+              minVal = this.manipulabilityRange.min;
+              maxVal = this.manipulabilityRange.max;
+              break;
+            case 'condition':
+              value = mcPoint.conditionNumber;
+              minVal = this.conditionNumberRange.min;
+              maxVal = this.conditionNumberRange.max;
+              break;
+            case 'orientation_volume':
+              value = mcPoint.orientationManipulability;
+              minVal = this.orientationManipulabilityRange.min;
+              maxVal = this.orientationManipulabilityRange.max;
+              break;
+            case 'orientation_condition':
+              value = mcPoint.orientationConditionNumber;
+              minVal = this.orientationConditionNumberRange.min;
+              maxVal = this.orientationConditionNumberRange.max;
+              break;
           }
 
-          const useLogScale = this.manipulabilityMetric === 'condition';
-          const color = this.manipulabilityToColor(value, minVal, maxVal, useLogScale);
+          const color = this.manipulabilityToColor(value, minVal, maxVal);
           colors.push(color.r, color.g, color.b);
         }
 
@@ -1191,42 +1496,12 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       this.manipulabilityEllipsoid.posEllipsoid.visible =
         this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
     }
-    if (this.manipulabilityEllipsoid?.posAxesGroup) {
-      this.manipulabilityEllipsoid.posAxesGroup.visible =
-        this.showEllipsoidAxes && this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
-    }
   }
 
   onOrientationEllipsoidVisibilityChange(): void {
     if (this.manipulabilityEllipsoid?.oriEllipsoid) {
       this.manipulabilityEllipsoid.oriEllipsoid.visible =
         this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
-    }
-    if (this.manipulabilityEllipsoid?.oriAxesGroup) {
-      this.manipulabilityEllipsoid.oriAxesGroup.visible =
-        this.showEllipsoidAxes && this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
-    }
-  }
-
-  onEllipsoidAxesVisibilityChange(): void {
-    if (this.manipulabilityEllipsoid?.posAxesGroup) {
-      this.manipulabilityEllipsoid.posAxesGroup.visible =
-        this.showEllipsoidAxes && this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
-    }
-    if (this.manipulabilityEllipsoid?.oriAxesGroup) {
-      this.manipulabilityEllipsoid.oriAxesGroup.visible =
-        this.showEllipsoidAxes && this.showOrientationEllipsoid && this.showManipulabilityEllipsoid;
-    }
-  }
-
-  onEllipsoidOpacityChange(): void {
-    if (this.manipulabilityEllipsoid?.posEllipsoid) {
-      (this.manipulabilityEllipsoid.posEllipsoid.material as THREE.MeshBasicMaterial).opacity =
-        this.ellipsoidOpacity;
-    }
-    if (this.manipulabilityEllipsoid?.oriEllipsoid) {
-      (this.manipulabilityEllipsoid.oriEllipsoid.material as THREE.MeshBasicMaterial).opacity =
-        this.ellipsoidOpacity;
     }
   }
 
@@ -1266,6 +1541,12 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     const worldAxes = this.scene.getObjectByName('world_axes');
     if (worldAxes) {
       worldAxes.visible = this.showFrames;
+      // Also traverse world axes to set visibility on children (labels, etc.)
+      worldAxes.traverse((obj) => {
+        if (obj instanceof CSS2DObject) {
+          obj.visible = this.showFrames;
+        }
+      });
     }
   }
 
@@ -1280,6 +1561,8 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!this.wasmModule || !this.kinematicTree) return;
     this.manipulabilityRange = { min: Infinity, max: -Infinity };
     this.conditionNumberRange = { min: Infinity, max: -Infinity };
+    this.orientationManipulabilityRange = { min: Infinity, max: -Infinity };
+    this.orientationConditionNumberRange = { min: Infinity, max: -Infinity };
     await this.generateMonteCarloPointCloud();
   }
 
@@ -1291,8 +1574,8 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cancelGeneration = false;
     const points: MonteCarloPoint[] = [];
 
-    // OPTIMIZATION 2: Adaptive batch size (target ~20-30 batches, more responsive)
-    const batchSize = Math.max(20, Math.min(200, Math.floor(this.pointCloudCount / 25)));
+    // Small fixed batch size for smooth UI updates
+    const batchSize = 10;
 
     // Get joint limits for random sampling
     const jointLimits = this.joints.map(j => ({
@@ -1361,15 +1644,25 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       );
 
       const manipulability = manip.wPos;
+      const orientationManipulability = manip.wOri;
 
-      // Calculate condition number from singular values
+      // Calculate reciprocal condition number from position singular values (higher is better, [0,1] range)
       const posValues = [];
       for (let k = 0; k < 3; k++) {
         posValues.push(manip.posValues.get(k));
       }
-      const maxValue = Math.max(...posValues);
-      const minValue = Math.min(...posValues);
-      const conditionNumber = minValue > 0 ? maxValue / minValue : Infinity;
+      const maxPosValue = Math.max(...posValues);
+      const minPosValue = Math.min(...posValues);
+      const conditionNumber = minPosValue / maxPosValue;  // Reciprocal: 0 (singular) to 1 (well-conditioned)
+
+      // Calculate reciprocal condition number from orientation singular values
+      const oriValues = [];
+      for (let k = 0; k < 3; k++) {
+        oriValues.push(manip.oriValues.get(k));
+      }
+      const maxOriValue = Math.max(...oriValues);
+      const minOriValue = Math.min(...oriValues);
+      const orientationConditionNumber = minOriValue / maxOriValue;
 
       // Clean up WASM vectors
       manip.posAxes.delete();
@@ -1377,7 +1670,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       manip.oriAxes.delete();
       manip.oriValues.delete();
 
-      points.push({ position, manipulability, conditionNumber, jointConfig: [...jointConfig] });
+      points.push({
+        position,
+        manipulability,
+        conditionNumber,
+        orientationManipulability,
+        orientationConditionNumber,
+        jointConfig: [...jointConfig]
+      });
       successfulPoints++;
       attempts++;
 
@@ -1385,16 +1685,21 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       this.manipulabilityRange.min = Math.min(this.manipulabilityRange.min, manipulability);
       this.manipulabilityRange.max = Math.max(this.manipulabilityRange.max, manipulability);
 
-      // Track condition number range (skip Infinity values)
-      if (isFinite(conditionNumber)) {
-        this.conditionNumberRange.min = Math.min(this.conditionNumberRange.min, conditionNumber);
-        this.conditionNumberRange.max = Math.max(this.conditionNumberRange.max, conditionNumber);
-      }
+      // Track reciprocal condition number range [0, 1]
+      this.conditionNumberRange.min = Math.min(this.conditionNumberRange.min, conditionNumber);
+      this.conditionNumberRange.max = Math.max(this.conditionNumberRange.max, conditionNumber);
+
+      // Track orientation ranges
+      this.orientationManipulabilityRange.min = Math.min(this.orientationManipulabilityRange.min, orientationManipulability);
+      this.orientationManipulabilityRange.max = Math.max(this.orientationManipulabilityRange.max, orientationManipulability);
+      this.orientationConditionNumberRange.min = Math.min(this.orientationConditionNumberRange.min, orientationConditionNumber);
+      this.orientationConditionNumberRange.max = Math.max(this.orientationConditionNumberRange.max, orientationConditionNumber);
 
       // Batch progress updates (yield to UI every batch)
       if (successfulPoints % batchSize === 0) {
         this.pointCloudProgress = (successfulPoints / this.pointCloudCount) * 100;
-        await new Promise(resolve => setTimeout(resolve, 0));
+        // Use requestAnimationFrame for smoother UI updates
+        await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
       }
     }
 
@@ -1408,20 +1713,24 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Only create visualization if we have points and weren't canceled
     if (points.length > 0 && !this.cancelGeneration) {
-      // For condition numbers, use 95th percentile as max to avoid outlier skew
-      const finiteConditionNumbers = points
+      // For reciprocal condition numbers, use 5th percentile as min to avoid extreme outliers near 0
+      const sortedConditionNumbers = points
         .map(p => p.conditionNumber)
-        .filter(cn => isFinite(cn))
+        .sort((a, b) => a - b);
+      const sortedOrientationConditionNumbers = points
+        .map(p => p.orientationConditionNumber)
         .sort((a, b) => a - b);
 
-      if (finiteConditionNumbers.length > 0) {
-        const p95Index = Math.floor(finiteConditionNumbers.length * 0.95);
-        this.conditionNumberRange.max = finiteConditionNumbers[p95Index];
+      if (sortedConditionNumbers.length > 0) {
+        const p5Index = Math.floor(sortedConditionNumbers.length * 0.05);
+        this.conditionNumberRange.min = sortedConditionNumbers[p5Index];
+        this.orientationConditionNumberRange.min = sortedOrientationConditionNumbers[p5Index];
       }
 
-      console.log('Manipulability range:', this.manipulabilityRange);
-      console.log('Condition number range:', this.conditionNumberRange);
-      console.log('Condition number 95th percentile used as max');
+      console.log('Position manipulability range:', this.manipulabilityRange);
+      console.log('Position condition number range:', this.conditionNumberRange);
+      console.log('Orientation manipulability range:', this.orientationManipulabilityRange);
+      console.log('Orientation condition number range:', this.orientationConditionNumberRange);
       this.createPointCloudVisualization(points);
     }
 
