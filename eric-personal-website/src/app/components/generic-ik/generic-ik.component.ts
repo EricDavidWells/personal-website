@@ -7,6 +7,7 @@ import { PROJECTS } from '../../shared/constants';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 
 interface JointState {
   name: string;
@@ -82,6 +83,14 @@ interface PointCloudVisualization {
   visible: boolean;
 }
 
+interface WorkspaceVolumeVisualization {
+  mesh: THREE.Mesh;
+  geometry: THREE.BufferGeometry;
+  material: THREE.MeshBasicMaterial;
+  volume: number;
+  voxelSize?: number;
+}
+
 const LINK_COLORS = [
   0x4488cc, 0x44aa88, 0xcc8844, 0xaa4488, 0x88aa44, 0x4444cc, 0xcc4444, 0x44ccaa
 ];
@@ -122,7 +131,17 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   orientationManipulabilityRange = { min: Infinity, max: -Infinity };
   orientationConditionNumberRange = { min: Infinity, max: -Infinity };
 
+  // Average manipulability measures
+  averageManipulability: number | null = null;
+  averageConditionNumber: number | null = null;
+  averageOrientationManipulability: number | null = null;
+  averageOrientationConditionNumber: number | null = null;
+
   manipulabilityEllipsoid: EllipsoidVisualization | null = null;
+  workspaceVolume: WorkspaceVolumeVisualization | null = null;
+  optimalVoxelSize: number | null = null;  // Cached optimal voxel size for adaptive method
+  cachedVoxelMap: Map<string, THREE.Vector3> | null = null;  // Cached voxel grid (key -> center position)
+  cachedConnectedVoxels: Set<string> | null = null;  // Cached connected voxel keys
 
   // Clipping planes
   private plane1: THREE.Mesh | null = null;
@@ -142,6 +161,8 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // UI controls
   showPointCloud = false;
+  showWorkspaceVolume = false;
+  volumeMethod: 'convex' | 'adaptive_voxel' = 'adaptive_voxel';
   pointCloudCount = 200;
   isGeneratingPointCloud = false;
   pointCloudProgress = 0;
@@ -234,6 +255,17 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       this.pointCloud.geometry.dispose();
       this.pointCloud.material.dispose();
     }
+
+    // Clean up workspace volume
+    if (this.workspaceVolume) {
+      this.scene.remove(this.workspaceVolume.mesh);
+      this.workspaceVolume.geometry.dispose();
+      this.workspaceVolume.material.dispose();
+      this.workspaceVolume = null;
+    }
+    this.optimalVoxelSize = null;
+    this.cachedVoxelMap = null;
+    this.cachedConnectedVoxels = null;
 
     // Clean up clipping planes
     if (this.plane1) {
@@ -375,7 +407,22 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         this.conditionNumberRange = { min: Infinity, max: -Infinity };
         this.orientationManipulabilityRange = { min: Infinity, max: -Infinity };
         this.orientationConditionNumberRange = { min: Infinity, max: -Infinity };
+        this.averageManipulability = null;
+        this.averageConditionNumber = null;
+        this.averageOrientationManipulability = null;
+        this.averageOrientationConditionNumber = null;
       }
+
+      // Clear workspace volume when switching robots
+      if (this.workspaceVolume) {
+        this.scene.remove(this.workspaceVolume.mesh);
+        this.workspaceVolume.geometry.dispose();
+        this.workspaceVolume.material.dispose();
+        this.workspaceVolume = null;
+      }
+      this.optimalVoxelSize = null;
+      this.cachedVoxelMap = null;
+      this.cachedConnectedVoxels = null;
 
       // Clear any previous error
       this.errorMessage = null;
@@ -731,13 +778,15 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       color: 0x00ff00,
       transparent: true,
       opacity: 0.3,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthWrite: false  // Don't block objects behind the plane
     });
     const planeMaterial2 = new THREE.MeshBasicMaterial({
       color: 0xff0000,
       transparent: true,
       opacity: 0.3,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthWrite: false  // Don't block objects behind the plane
     });
 
     this.plane1 = new THREE.Mesh(planeGeometry, planeMaterial1);
@@ -852,9 +901,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         this.plane2.position.z = newZ;
       }
 
-      if (this.enablePlaneFiltering) {
-        this.updatePointCloudFiltering();
-      }
+      // Visually filter display (doesn't recalculate voxel grid)
+      this.updatePointCloudFiltering();
+      this.updateWorkspaceVolumeFiltering();
       return;
     }
 
@@ -876,6 +925,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       this.dragArrow = null;
       this.isDraggingPoints = false;
       this.controls.enabled = true;
+      // Note: Filtering happens during drag, no need to update on mouse up
     }
   }
 
@@ -889,6 +939,22 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Temporary vector for projection (reuse to avoid allocations)
     const projected = new THREE.Vector3();
 
+    // Get plane data if filtering is enabled
+    let plane1Normal: THREE.Vector3 | undefined;
+    let plane1Point: THREE.Vector3 | undefined;
+    let plane2Normal: THREE.Vector3 | undefined;
+    let plane2Point: THREE.Vector3 | undefined;
+    let tempVec: THREE.Vector3 | undefined;
+    const shouldFilter = this.enablePlaneFiltering && this.plane1 && this.plane2;
+
+    if (shouldFilter) {
+      plane1Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane1!.quaternion);
+      plane1Point = this.plane1!.position.clone();
+      plane2Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane2!.quaternion);
+      plane2Point = this.plane2!.position.clone();
+      tempVec = new THREE.Vector3();
+    }
+
     for (const point of this.pointCloud.data) {
       // Project point to screen space
       projected.copy(point.position).project(this.camera);
@@ -900,6 +966,17 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Check if within threshold
       if (distance < clickThreshold) {
+        // Check if point is between planes (if filtering enabled)
+        if (shouldFilter) {
+          tempVec!.copy(point.position).sub(plane1Point!);
+          const dist1 = plane1Normal!.dot(tempVec!);
+          tempVec!.copy(point.position).sub(plane2Point!);
+          const dist2 = plane2Normal!.dot(tempVec!);
+          const isBetween = (dist1 >= 0 && dist2 <= 0) || (dist1 <= 0 && dist2 >= 0);
+
+          if (!isBetween) continue; // Skip points outside plane region
+        }
+
         // Among points within threshold, select the one closest to camera (smallest Z)
         if (projected.z < minDepth) {
           minDepth = projected.z;
@@ -1143,6 +1220,564 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     return group;
   }
 
+  private calculateConvexHullVolume(geometry: ConvexGeometry): number {
+    const position = geometry.attributes['position'];
+    if (!position) {
+      console.warn('Invalid geometry for volume calculation - no position attribute');
+      return 0;
+    }
+
+    // Check if geometry has index, if not compute it
+    if (!geometry.index) {
+      geometry.computeVertexNormals();
+      // For non-indexed geometry, vertices are already in triangle order (every 3 vertices = 1 triangle)
+    }
+
+    const index = geometry.index;
+    const vertexCount = position.count;
+
+    // Calculate centroid of all vertices
+    const centroid = new THREE.Vector3();
+    for (let i = 0; i < vertexCount; i++) {
+      centroid.x += position.getX(i);
+      centroid.y += position.getY(i);
+      centroid.z += position.getZ(i);
+    }
+    centroid.divideScalar(vertexCount);
+
+    // Calculate volume by summing tetrahedra formed by each triangle and the centroid
+    let volume = 0;
+
+    if (index) {
+      // Indexed geometry
+      for (let i = 0; i < index.count; i += 3) {
+        const i0 = index.getX(i);
+        const i1 = index.getX(i + 1);
+        const i2 = index.getX(i + 2);
+
+        // Get triangle vertices relative to centroid
+        const v0 = new THREE.Vector3(
+          position.getX(i0) - centroid.x,
+          position.getY(i0) - centroid.y,
+          position.getZ(i0) - centroid.z
+        );
+        const v1 = new THREE.Vector3(
+          position.getX(i1) - centroid.x,
+          position.getY(i1) - centroid.y,
+          position.getZ(i1) - centroid.z
+        );
+        const v2 = new THREE.Vector3(
+          position.getX(i2) - centroid.x,
+          position.getY(i2) - centroid.y,
+          position.getZ(i2) - centroid.z
+        );
+
+        // Signed volume of tetrahedron formed by triangle and centroid
+        // V = (1/6) * v0 · (v1 × v2)
+        volume += v0.dot(v1.clone().cross(v2)) / 6.0;
+      }
+      console.log(`Convex hull (indexed): ${index.count / 3} triangles, ${vertexCount} vertices`);
+    } else {
+      // Non-indexed geometry - every 3 consecutive vertices form a triangle
+      for (let i = 0; i < vertexCount; i += 3) {
+        // Get triangle vertices relative to centroid
+        const v0 = new THREE.Vector3(
+          position.getX(i) - centroid.x,
+          position.getY(i) - centroid.y,
+          position.getZ(i) - centroid.z
+        );
+        const v1 = new THREE.Vector3(
+          position.getX(i + 1) - centroid.x,
+          position.getY(i + 1) - centroid.y,
+          position.getZ(i + 1) - centroid.z
+        );
+        const v2 = new THREE.Vector3(
+          position.getX(i + 2) - centroid.x,
+          position.getY(i + 2) - centroid.y,
+          position.getZ(i + 2) - centroid.z
+        );
+
+        // Signed volume of tetrahedron formed by triangle and centroid
+        volume += v0.dot(v1.clone().cross(v2)) / 6.0;
+      }
+      console.log(`Convex hull (non-indexed): ${vertexCount / 3} triangles, ${vertexCount} vertices`);
+    }
+
+    const finalVolume = Math.abs(volume);
+    console.log(`Convex hull volume: ${finalVolume.toFixed(6)} m³`);
+    return finalVolume;
+  }
+
+  private calculateVoxelVolume(points: THREE.Vector3[], voxelSize: number): { volume: number; voxelGeometry: THREE.BufferGeometry } {
+    // Find bounding box
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+
+    for (const point of points) {
+      min.min(point);
+      max.max(point);
+    }
+
+    // Create voxel grid using Set for fast lookup
+    const voxelSet = new Set<string>();
+
+    for (const point of points) {
+      // Calculate voxel coordinates
+      const vx = Math.floor((point.x - min.x) / voxelSize);
+      const vy = Math.floor((point.y - min.y) / voxelSize);
+      const vz = Math.floor((point.z - min.z) / voxelSize);
+
+      const key = `${vx},${vy},${vz}`;
+      voxelSet.add(key);
+    }
+
+    const occupiedVoxels = voxelSet.size;
+    const voxelVolume = voxelSize * voxelSize * voxelSize;
+    const totalVolume = occupiedVoxels * voxelVolume;
+
+    // Create visualization geometry (sample of voxels to avoid too many cubes)
+    const maxVoxelsToShow = 20000;  // Increased from 1000 - render up to 20k voxels without sampling
+    const voxelArray = Array.from(voxelSet);
+    const step = Math.max(1, Math.floor(voxelArray.length / maxVoxelsToShow));
+
+    const positions: number[] = [];
+    const boxGeometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+    const matrix = new THREE.Matrix4();
+
+    for (let i = 0; i < voxelArray.length; i += step) {
+      const [vx, vy, vz] = voxelArray[i].split(',').map(Number);
+
+      const x = min.x + (vx + 0.5) * voxelSize;
+      const y = min.y + (vy + 0.5) * voxelSize;
+      const z = min.z + (vz + 0.5) * voxelSize;
+
+      matrix.setPosition(x, y, z);
+
+      // Merge box geometry into positions
+      const posAttr = boxGeometry.attributes['position'];
+      for (let j = 0; j < posAttr.count; j++) {
+        const v = new THREE.Vector3(
+          posAttr.getX(j),
+          posAttr.getY(j),
+          posAttr.getZ(j)
+        );
+        v.applyMatrix4(matrix);
+        positions.push(v.x, v.y, v.z);
+      }
+    }
+
+    const voxelGeometry = new THREE.BufferGeometry();
+    voxelGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    return { volume: totalVolume, voxelGeometry };
+  }
+
+  private testVoxelConnectivity(
+    points: THREE.Vector3[],
+    voxelSize: number
+  ): { isFullyConnected: boolean; connectedCount: number; totalCount: number } {
+
+    // Build voxel grid
+    const bbox = new THREE.Box3().setFromPoints(points);
+    const min = bbox.min;
+    const voxelSet = new Set<string>();
+
+    for (const point of points) {
+      const vx = Math.floor((point.x - min.x) / voxelSize);
+      const vy = Math.floor((point.y - min.y) / voxelSize);
+      const vz = Math.floor((point.z - min.z) / voxelSize);
+      voxelSet.add(`${vx},${vy},${vz}`);
+    }
+
+    const totalCount = voxelSet.size;
+    if (totalCount === 0) {
+      return { isFullyConnected: false, connectedCount: 0, totalCount: 0 };
+    }
+
+    // BFS from starting voxel (closest to origin)
+    const voxelKeys = Array.from(voxelSet);
+    const startKey = voxelKeys[0]; // Could optimize by finding closest to base
+
+    const connected = new Set<string>([startKey]);
+    const queue = [startKey];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const [vx, vy, vz] = current.split(',').map(Number);
+
+      // Check 6 neighbors
+      const neighbors = [
+        [vx+1, vy, vz], [vx-1, vy, vz],
+        [vx, vy+1, vz], [vx, vy-1, vz],
+        [vx, vy, vz+1], [vx, vy, vz-1]
+      ];
+
+      for (const [nx, ny, nz] of neighbors) {
+        const neighborKey = `${nx},${ny},${nz}`;
+        if (voxelSet.has(neighborKey) && !connected.has(neighborKey)) {
+          connected.add(neighborKey);
+          queue.push(neighborKey);
+        }
+      }
+    }
+
+    return {
+      isFullyConnected: connected.size === totalCount,
+      connectedCount: connected.size,
+      totalCount
+    };
+  }
+
+  private calculateVoxelVolumeWithConnectivity(
+    points: THREE.Vector3[],
+    voxelSize: number
+  ): { volume: number; voxelGeometry: THREE.BufferGeometry; voxelSize: number; voxelMap: Map<string, THREE.Vector3>; connected: Set<string> } {
+
+    // Step 1: Build voxel grid with given voxel size
+    const bbox = new THREE.Box3().setFromPoints(points);
+    const min = bbox.min;
+    const voxelMap = new Map<string, THREE.Vector3>(); // key -> voxel center position
+
+    for (const point of points) {
+      const vx = Math.floor((point.x - min.x) / voxelSize);
+      const vy = Math.floor((point.y - min.y) / voxelSize);
+      const vz = Math.floor((point.z - min.z) / voxelSize);
+
+      const key = `${vx},${vy},${vz}`;
+      if (!voxelMap.has(key)) {
+        const center = new THREE.Vector3(
+          min.x + (vx + 0.5) * voxelSize,
+          min.y + (vy + 0.5) * voxelSize,
+          min.z + (vz + 0.5) * voxelSize
+        );
+        voxelMap.set(key, center);
+      }
+    }
+
+    // Step 2: Check connectivity for diagnostic purposes
+    const voxelKeys = Array.from(voxelMap.keys());
+    if (voxelKeys.length === 0) {
+      return {
+        volume: 0,
+        voxelGeometry: new THREE.BufferGeometry(),
+        voxelSize,
+        voxelMap: new Map(),
+        connected: new Set()
+      };
+    }
+
+    // Start from voxel closest to origin (robot base)
+    const origin = new THREE.Vector3(0, 0, 0);
+    let startKey = voxelKeys[0];
+    let minDist = Infinity;
+    for (const key of voxelKeys) {
+      const dist = voxelMap.get(key)!.distanceTo(origin);
+      if (dist < minDist) {
+        minDist = dist;
+        startKey = key;
+      }
+    }
+
+    // BFS to find connected voxels (for diagnostics)
+    const connected = new Set<string>();
+    const queue = [startKey];
+    connected.add(startKey);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const [vx, vy, vz] = current.split(',').map(Number);
+
+      // Check 6 neighbors (±x, ±y, ±z)
+      const neighbors = [
+        [vx+1, vy, vz], [vx-1, vy, vz],
+        [vx, vy+1, vz], [vx, vy-1, vz],
+        [vx, vy, vz+1], [vx, vy, vz-1]
+      ];
+
+      for (const [nx, ny, nz] of neighbors) {
+        const neighborKey = `${nx},${ny},${nz}`;
+        if (voxelMap.has(neighborKey) && !connected.has(neighborKey)) {
+          connected.add(neighborKey);
+          queue.push(neighborKey);
+        }
+      }
+    }
+
+    // Step 3: Verify connectivity and calculate volume
+    const voxelVolume = voxelSize ** 3;
+
+    if (connected.size < voxelMap.size) {
+      const disconnectedCount = voxelMap.size - connected.size;
+      console.error(`ERROR: Algorithm produced disconnected voxels!`);
+      console.error(`  Total voxels: ${voxelMap.size}, Connected: ${connected.size}`);
+      console.error(`  Disconnected: ${disconnectedCount} (${(100 * disconnectedCount / voxelMap.size).toFixed(1)}%)`);
+      console.error(`  This should not happen - binary search should have prevented this!`);
+    }
+
+    const totalVolume = connected.size * voxelVolume;
+
+    // Step 4: Create visualization geometry from connected voxels
+    const positions: number[] = [];
+    const boxGeometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+    const matrix = new THREE.Matrix4();
+
+    const maxVoxelsToShow = 20000;  // Increased from 1000 - render up to 20k voxels without sampling
+    const connectedArray = Array.from(connected);
+    const step = Math.max(1, Math.floor(connectedArray.length / maxVoxelsToShow));
+
+    for (let i = 0; i < connectedArray.length; i += step) {
+      const center = voxelMap.get(connectedArray[i])!;
+      matrix.setPosition(center);
+
+      const posAttr = boxGeometry.attributes['position'];
+      for (let j = 0; j < posAttr.count; j++) {
+        const v = new THREE.Vector3(
+          posAttr.getX(j),
+          posAttr.getY(j),
+          posAttr.getZ(j)
+        );
+        v.applyMatrix4(matrix);
+        positions.push(v.x, v.y, v.z);
+      }
+    }
+
+    const voxelGeometry = new THREE.BufferGeometry();
+    voxelGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const voxelsRendered = Math.ceil(connectedArray.length / step);
+    console.log(`Voxel volume (adaptive): ${totalVolume.toFixed(6)} m³`);
+    console.log(`  Total voxels: ${voxelMap.size}, Connected: ${connected.size}, Voxel size: ${voxelSize.toFixed(4)} m`);
+    console.log(`  Visualization: rendering ${voxelsRendered} of ${connected.size} voxels (step=${step})`);
+
+    return { volume: totalVolume, voxelGeometry, voxelSize, voxelMap, connected };
+  }
+
+  private calculateAdaptiveVoxelVolume(
+    points: THREE.Vector3[]
+  ): { volume: number; voxelGeometry: THREE.BufferGeometry; voxelSize: number; voxelMap: Map<string, THREE.Vector3>; connected: Set<string> } {
+
+    // Calculate search bounds
+    const bbox = new THREE.Box3().setFromPoints(points);
+    const size = bbox.getSize(new THREE.Vector3());
+    const bboxVolume = size.x * size.y * size.z;
+    const avgVolumePerPoint = bboxVolume / points.length;
+    const avgSpacing = Math.pow(avgVolumePerPoint, 1/3);
+
+    let minVoxelSize = avgSpacing * 0.2;  // Fine resolution (likely disconnected)
+    let maxVoxelSize = avgSpacing * 3.0;  // Coarse resolution (definitely connected)
+    const tolerance = avgSpacing * 0.01;  // Convergence threshold
+
+    console.log(`=== Adaptive Voxel Binary Search ===`);
+    console.log(`Points: ${points.length}, Avg spacing: ${avgSpacing.toFixed(4)} m`);
+    console.log(`Search range: [${minVoxelSize.toFixed(4)}, ${maxVoxelSize.toFixed(4)}], tolerance: ${tolerance.toFixed(6)}`);
+
+    // First, verify that maxVoxelSize produces a connected workspace
+    let initialTest = this.testVoxelConnectivity(points, maxVoxelSize);
+    console.log(`Initial max size test: ${maxVoxelSize.toFixed(4)} → ${initialTest.connectedCount}/${initialTest.totalCount} ${initialTest.isFullyConnected ? '✓' : '✗'}`);
+
+    if (!initialTest.isFullyConnected) {
+      console.warn(`Warning: Even at maximum voxel size (${maxVoxelSize.toFixed(4)} m), workspace is disconnected!`);
+      console.warn(`Increasing voxel size to find connected configuration...`);
+      // Increase maxVoxelSize until we find a connected configuration
+      // Use a more aggressive limit (20x instead of 10x)
+      while (!initialTest.isFullyConnected && maxVoxelSize < avgSpacing * 20) {
+        maxVoxelSize *= 1.5;
+        initialTest = this.testVoxelConnectivity(points, maxVoxelSize);
+        console.log(`  Retry with larger size: ${maxVoxelSize.toFixed(4)} → ${initialTest.connectedCount}/${initialTest.totalCount} ${initialTest.isFullyConnected ? '✓' : '✗'}`);
+      }
+    }
+
+    let bestVoxelSize = maxVoxelSize;
+    let bestIsConnected = initialTest.isFullyConnected;
+    let iteration = 0;
+    const maxIterations = 20; // Prevent infinite loops
+
+    // Binary search for optimal voxel size
+    while (maxVoxelSize - minVoxelSize > tolerance && iteration < maxIterations) {
+      iteration++;
+      const testVoxelSize = (minVoxelSize + maxVoxelSize) / 2;
+
+      // Test connectivity at this voxel size
+      const { isFullyConnected, connectedCount, totalCount } =
+        this.testVoxelConnectivity(points, testVoxelSize);
+
+      console.log(`  Iteration ${iteration}: size=${testVoxelSize.toFixed(4)}, connected=${connectedCount}/${totalCount} ${isFullyConnected ? '✓' : '✗'}`);
+
+      if (isFullyConnected) {
+        // Connected - try smaller voxels for better resolution
+        bestVoxelSize = testVoxelSize;
+        bestIsConnected = true;
+        maxVoxelSize = testVoxelSize;
+      } else {
+        // Disconnected - need larger voxels
+        minVoxelSize = testVoxelSize;
+      }
+    }
+
+    console.log(`Binary search complete: bestVoxelSize=${bestVoxelSize.toFixed(4)} m, connected=${bestIsConnected} (after ${iteration} iterations)`);
+
+    // If binary search failed to find connected region, try increasing size
+    if (!bestIsConnected) {
+      console.warn(`Binary search did not find connected region. Trying larger voxel sizes...`);
+      let retrySize = bestVoxelSize * 1.5;
+      let retryCount = 0;
+      while (!bestIsConnected && retryCount < 10 && retrySize < avgSpacing * 50) {
+        retryCount++;
+        const retryTest = this.testVoxelConnectivity(points, retrySize);
+        console.log(`  Retry ${retryCount}: size=${retrySize.toFixed(4)} → ${retryTest.connectedCount}/${retryTest.totalCount} ${retryTest.isFullyConnected ? '✓' : '✗'}`);
+        if (retryTest.isFullyConnected) {
+          bestVoxelSize = retrySize;
+          bestIsConnected = true;
+          console.log(`Found connected region at size ${retrySize.toFixed(4)} m`);
+          break;
+        }
+        retrySize *= 1.5;
+      }
+    }
+
+    if (!bestIsConnected) {
+      console.error(`ERROR: Could not find a fully connected voxel size after all attempts!`);
+      console.error(`This indicates the workspace has disconnected regions that cannot be bridged.`);
+      console.error(`Using best available size: ${bestVoxelSize.toFixed(4)} m`);
+    }
+
+    console.log(`Building final voxel grid...`);
+
+    // Build final voxel grid at optimal size
+    return this.calculateVoxelVolumeWithConnectivity(points, bestVoxelSize);
+  }
+
+  private createWorkspaceVolumeVisualizationFromFilteredVoxels(voxelKeysToShow: Set<string>): void {
+    // Clean up existing
+    if (this.workspaceVolume) {
+      this.scene.remove(this.workspaceVolume.mesh);
+      this.workspaceVolume.geometry.dispose();
+      this.workspaceVolume.material.dispose();
+      this.workspaceVolume = null;
+    }
+
+    if (!this.cachedVoxelMap || !this.optimalVoxelSize) {
+      console.error('Cannot filter voxels - no cached voxel data');
+      return;
+    }
+
+    const voxelSize = this.optimalVoxelSize;
+    const voxelVolume = voxelSize ** 3;
+    const totalVolume = voxelKeysToShow.size * voxelVolume;
+
+    // Create visualization geometry from filtered voxels
+    const positions: number[] = [];
+    const boxGeometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+    const matrix = new THREE.Matrix4();
+
+    const maxVoxelsToShow = 20000;
+    const voxelsArray = Array.from(voxelKeysToShow);
+    const step = Math.max(1, Math.floor(voxelsArray.length / maxVoxelsToShow));
+
+    for (let i = 0; i < voxelsArray.length; i += step) {
+      const center = this.cachedVoxelMap.get(voxelsArray[i])!;
+      matrix.setPosition(center);
+
+      const posAttr = boxGeometry.attributes['position'];
+      for (let j = 0; j < posAttr.count; j++) {
+        const v = new THREE.Vector3(
+          posAttr.getX(j),
+          posAttr.getY(j),
+          posAttr.getZ(j)
+        );
+        v.applyMatrix4(matrix);
+        positions.push(v.x, v.y, v.z);
+      }
+    }
+
+    const voxelGeometry = new THREE.BufferGeometry();
+    voxelGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.1,
+      side: THREE.DoubleSide,
+      wireframe: true
+    });
+
+    const mesh = new THREE.Mesh(voxelGeometry, material);
+    mesh.visible = this.showWorkspaceVolume;
+    this.scene.add(mesh);
+
+    this.workspaceVolume = { mesh, geometry: voxelGeometry, material, volume: totalVolume, voxelSize };
+
+    console.log(`Filtered volume: ${totalVolume.toFixed(6)} m³ (${voxelsArray.length} voxels)`);
+  }
+
+  private createWorkspaceVolumeVisualization(points: THREE.Vector3[]): void {
+    // Clean up existing
+    if (this.workspaceVolume) {
+      this.scene.remove(this.workspaceVolume.mesh);
+      this.workspaceVolume.geometry.dispose();
+      this.workspaceVolume.material.dispose();
+      this.workspaceVolume = null;
+    }
+
+    if (points.length < 4) {
+      console.warn('Need at least 4 points to estimate workspace volume');
+      return;
+    }
+
+    try {
+      if (this.volumeMethod === 'convex') {
+        // Convex hull approach
+        const geometry = new ConvexGeometry(points);
+        const volume = this.calculateConvexHullVolume(geometry);
+
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x00ff88,
+          transparent: true,
+          opacity: 0.15,
+          side: THREE.DoubleSide
+        });
+
+        // Add wireframe edges
+        const edges = new THREE.EdgesGeometry(geometry);
+        const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x00ff88 });
+        const wireframe = new THREE.LineSegments(edges, edgeMaterial);
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.add(wireframe);
+        mesh.visible = this.showWorkspaceVolume;
+        this.scene.add(mesh);
+
+        this.workspaceVolume = { mesh, geometry, material, volume };
+
+        console.log(`Workspace volume (convex hull): ${volume.toFixed(6)} m³`);
+      } else {
+        // Adaptive voxel approach - calculate and cache voxel grid
+        const { volume, voxelGeometry, voxelSize, voxelMap, connected } = this.calculateAdaptiveVoxelVolume(points);
+
+        // Cache everything for filtering operations
+        this.optimalVoxelSize = voxelSize;
+        this.cachedVoxelMap = voxelMap;
+        this.cachedConnectedVoxels = connected;
+
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x00ffff,
+          transparent: true,
+          opacity: 0.1,
+          side: THREE.DoubleSide,
+          wireframe: true
+        });
+
+        const mesh = new THREE.Mesh(voxelGeometry, material);
+        mesh.visible = this.showWorkspaceVolume;
+        this.scene.add(mesh);
+
+        this.workspaceVolume = { mesh, geometry: voxelGeometry, material, volume, voxelSize };
+      }
+    } catch (error) {
+      console.error('Failed to create workspace volume visualization:', error);
+    }
+  }
+
   private createPointCloudVisualization(mcPoints: MonteCarloPoint[]): void {
     // Clean up existing
     if (this.pointCloud) {
@@ -1207,10 +1842,31 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.pointCloud = { points, geometry, material, data: mcPoints, visible: this.showPointCloud };
 
-    // Apply filtering if enabled
-    if (this.enablePlaneFiltering) {
-      this.updatePointCloudFiltering();
+    // Calculate average manipulability measures
+    if (mcPoints.length > 0) {
+      let sumManip = 0, sumCond = 0, sumOrientManip = 0, sumOrientCond = 0;
+      for (const point of mcPoints) {
+        sumManip += point.manipulability;
+        sumCond += point.conditionNumber;
+        sumOrientManip += point.orientationManipulability;
+        sumOrientCond += point.orientationConditionNumber;
+      }
+      this.averageManipulability = sumManip / mcPoints.length;
+      this.averageConditionNumber = sumCond / mcPoints.length;
+      this.averageOrientationManipulability = sumOrientManip / mcPoints.length;
+      this.averageOrientationConditionNumber = sumOrientCond / mcPoints.length;
+    } else {
+      this.averageManipulability = null;
+      this.averageConditionNumber = null;
+      this.averageOrientationManipulability = null;
+      this.averageOrientationConditionNumber = null;
     }
+
+    // Create workspace volume visualization from all points
+    // Note: If rejection sampling was used during generation, these points are already
+    // within the plane bounds, so no further filtering is needed
+    const workspacePoints = mcPoints.map(p => p.position.clone());
+    this.createWorkspaceVolumeVisualization(workspacePoints);
   }
 
   private updatePointCloudFiltering(): void {
@@ -1228,6 +1884,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Filter points: only show points between the two planes
     const newPositions: number[] = [];
     const newColors: number[] = [];
+    const filteredPoints: THREE.Vector3[] = [];
 
     for (let i = 0; i < this.pointCloud.data.length; i++) {
       const point = this.pointCloud.data[i].position;
@@ -1244,6 +1901,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (isBetween) {
         newPositions.push(point.x, point.y, point.z);
+        filteredPoints.push(point.clone());
 
         // Color based on selected metric
         let value: number, minVal: number, maxVal: number;
@@ -1280,6 +1938,65 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.pointCloud.geometry.setAttribute('color', new THREE.Float32BufferAttribute(newColors, 3));
     this.pointCloud.geometry.attributes['position'].needsUpdate = true;
     this.pointCloud.geometry.attributes['color'].needsUpdate = true;
+  }
+
+  private updateWorkspaceVolumeFiltering(): void {
+    if (!this.plane1 || !this.plane2) return;
+
+    // Get plane normals and positions
+    const plane1Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane1.quaternion);
+    const plane1Point = this.plane1.position.clone();
+    const plane2Normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.plane2.quaternion);
+    const plane2Point = this.plane2.position.clone();
+    const tempVec = new THREE.Vector3();
+
+    // Update workspace volume by filtering cached voxels (don't rebuild grid)
+    if (this.cachedVoxelMap && this.cachedConnectedVoxels && this.volumeMethod === 'adaptive_voxel') {
+      // Filter voxels between planes
+      const filteredVoxels = new Set<string>();
+
+      for (const voxelKey of this.cachedConnectedVoxels) {
+        const voxelCenter = this.cachedVoxelMap.get(voxelKey)!;
+
+        // Check if voxel center is between planes
+        tempVec.copy(voxelCenter).sub(plane1Point);
+        const dist1 = plane1Normal.dot(tempVec);
+
+        tempVec.copy(voxelCenter).sub(plane2Point);
+        const dist2 = plane2Normal.dot(tempVec);
+
+        // Point is between planes if both distances have opposite signs or one is zero
+        if (dist1 * dist2 <= 0) {
+          filteredVoxels.add(voxelKey);
+        }
+      }
+
+      // Visualize filtered voxels (no grid recalculation!)
+      if (filteredVoxels.size > 0) {
+        this.createWorkspaceVolumeVisualizationFromFilteredVoxels(filteredVoxels);
+      }
+    } else if (this.volumeMethod === 'convex' && this.pointCloud) {
+      // Convex hull needs to be regenerated with filtered points
+      const filteredPoints: THREE.Vector3[] = [];
+
+      for (const mcPoint of this.pointCloud.data) {
+        const point = mcPoint.position;
+
+        tempVec.copy(point).sub(plane1Point);
+        const dist1 = plane1Normal.dot(tempVec);
+
+        tempVec.copy(point).sub(plane2Point);
+        const dist2 = plane2Normal.dot(tempVec);
+
+        if (dist1 * dist2 <= 0) {
+          filteredPoints.push(point.clone());
+        }
+      }
+
+      if (filteredPoints.length >= 4) {
+        this.createWorkspaceVolumeVisualization(filteredPoints);
+      }
+    }
   }
 
   private createManipulabilityEllipsoidVisualization(): void {
@@ -1423,6 +2140,23 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  onWorkspaceVolumeVisibilityChange(): void {
+    if (this.workspaceVolume) {
+      this.workspaceVolume.mesh.visible = this.showWorkspaceVolume;
+    }
+  }
+
+  onVolumeMethodChange(): void {
+    if (this.pointCloud) {
+      // Clear cached data when switching methods (will be recalculated if needed)
+      this.optimalVoxelSize = null;
+      this.cachedVoxelMap = null;
+      this.cachedConnectedVoxels = null;
+      const points = this.pointCloud.data.map(p => p.position.clone());
+      this.createWorkspaceVolumeVisualization(points);
+    }
+  }
+
   onClippingPlanesVisibilityChange(): void {
     if (this.plane1 && this.plane2) {
       this.plane1.visible = this.showClippingPlanes;
@@ -1435,16 +2169,22 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onPlaneFilteringChange(): void {
+    // When enabled: visually filter points/voxels between planes (doesn't recalculate)
+    // When disabled: show all points/voxels
+    // Also controls rejection sampling on next generation
     if (this.enablePlaneFiltering) {
       this.updatePointCloudFiltering();
+      this.updateWorkspaceVolumeFiltering();
     } else {
       // Restore all points
       if (this.pointCloud) {
         const positions: number[] = [];
         const colors: number[] = [];
+        const allPoints: THREE.Vector3[] = [];
 
         for (const mcPoint of this.pointCloud.data) {
           positions.push(mcPoint.position.x, mcPoint.position.y, mcPoint.position.z);
+          allPoints.push(mcPoint.position.clone());
 
           // Color based on selected metric
           let value: number, minVal: number, maxVal: number;
@@ -1479,6 +2219,13 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         this.pointCloud.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         this.pointCloud.geometry.attributes['position'].needsUpdate = true;
         this.pointCloud.geometry.attributes['color'].needsUpdate = true;
+
+        // Restore workspace volume (doesn't recalculate grid, just shows all cached voxels)
+        if (this.cachedConnectedVoxels && this.volumeMethod === 'adaptive_voxel') {
+          this.createWorkspaceVolumeVisualizationFromFilteredVoxels(this.cachedConnectedVoxels);
+        } else if (this.volumeMethod === 'convex') {
+          this.createWorkspaceVolumeVisualization(allPoints);
+        }
       }
     }
   }
@@ -1590,7 +2337,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       jointNamesVec.push_back(joint.name);
     }
 
-    // OPTIMIZATION 1: Get plane bounds if filtering is enabled (rejection sampling)
+    // Rejection sampling: only generate points within plane bounds if filtering is enabled
     let planeBounds: { min: number, max: number } | null = null;
     if (this.enablePlaneFiltering && this.plane1 && this.plane2) {
       const plane1Z = this.plane1.position.z;
@@ -1601,7 +2348,6 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       };
     }
 
-    // Use rejection sampling if plane filtering is enabled
     let successfulPoints = 0;
     let attempts = 0;
     const maxAttempts = this.pointCloudCount * 10; // Safety limit
@@ -1626,7 +2372,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       const mat4 = new THREE.Matrix4().fromArray(elements);
       const position = new THREE.Vector3().setFromMatrixPosition(mat4);
 
-      // OPTIMIZATION 1: Check if point is within plane bounds BEFORE expensive manipulability calculation
+      // Check if point is within plane bounds BEFORE expensive manipulability calculation
       if (planeBounds) {
         const posZ = position.z;
         if (posZ < planeBounds.min || posZ > planeBounds.max) {
@@ -1635,7 +2381,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
 
-      // Only compute manipulability for points that passed the filter
+      // Compute manipulability for points that passed the filter
       const manip = this.wasmModule.getManipulability(
         this.kinematicTree,
         'ee_link',

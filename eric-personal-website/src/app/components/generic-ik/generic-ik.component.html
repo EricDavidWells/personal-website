@@ -81,6 +81,79 @@
                     </div>
 
                     <div class="control-row">
+                        <label for="volumeMethod">Volume Method:</label>
+                        <select id="volumeMethod"
+                                [(ngModel)]="volumeMethod"
+                                (change)="onVolumeMethodChange()"
+                                [disabled]="!pointCloud">
+                            <option value="adaptive_voxel">Adaptive Voxel (recommended)</option>
+                            <option value="convex">Convex Hull (upper bound)</option>
+                        </select>
+                    </div>
+
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox"
+                                   [(ngModel)]="showWorkspaceVolume"
+                                   (change)="onWorkspaceVolumeVisibilityChange()"
+                                   [disabled]="!pointCloud" />
+                            Show Workspace Volume
+                        </label>
+                    </div>
+
+                    @if (workspaceVolume) {
+                        <div class="manip-info">
+                            <div class="manip-range">
+                                <span>Workspace Volume:</span>
+                                <span class="manip-value">
+                                    {{ workspaceVolume.volume | number:'1.6-6' }} m³
+                                </span>
+                            </div>
+                            @if (volumeMethod === 'adaptive_voxel' && workspaceVolume.voxelSize) {
+                                <div class="info-text" style="font-size: 10px; margin-top: 4px;">
+                                    Method: Adaptive voxel<br>
+                                    Voxel size: {{ workspaceVolume.voxelSize | number:'1.4-4' }} m (auto-tuned)
+                                </div>
+                            }
+                            @if (volumeMethod === 'convex') {
+                                <div class="info-text" style="font-size: 10px; margin-top: 4px;">
+                                    Method: Convex hull (upper bound)
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (pointCloud && averageManipulability !== null) {
+                        <div class="manip-info" style="margin-top: 8px;">
+                            <div style="font-weight: 500; margin-bottom: 4px;">Average Manipulability:</div>
+                            <div class="manip-range">
+                                <span>Volume:</span>
+                                <span class="manip-value">
+                                    {{ averageManipulability | number:'1.6-6' }}
+                                </span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Condition:</span>
+                                <span class="manip-value">
+                                    {{ averageConditionNumber | number:'1.2-2' }}
+                                </span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Orient. Volume:</span>
+                                <span class="manip-value">
+                                    {{ averageOrientationManipulability | number:'1.6-6' }}
+                                </span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Orient. Condition:</span>
+                                <span class="manip-value">
+                                    {{ averageOrientationConditionNumber | number:'1.2-2' }}
+                                </span>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="control-row">
                         <label>
                             <input type="checkbox"
                                    [(ngModel)]="showClippingPlanes"
