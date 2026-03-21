@@ -1832,7 +1832,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       sizeAttenuation: true,
       transparent: true,
       opacity: 0.9,  // Less see-through
-      depthWrite: false
+      depthWrite: true
     });
 
     const points = new THREE.Points(geometry, material);
