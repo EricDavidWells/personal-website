@@ -239,9 +239,21 @@ select:focus {
     font-size: 11px;
 }
 
+.manip-range span {
+    font-size: 11px;
+}
+
 .manip-value {
     font-family: monospace;
     color: var(--color-text-hover);
+    font-size: 11px;
+}
+
+.info-section-header {
+    font-weight: 500;
+    font-size: 11px;
+    margin-bottom: 4px;
+    margin-top: 8px;
 }
 
 .color-legend {
@@ -267,4 +279,139 @@ select:focus {
     justify-content: space-between;
     font-size: 10px;
     color: var(--color-text-hover);
+}
+
+/* Inline control row for dropdowns */
+.control-row.inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.control-row.inline label {
+    white-space: nowrap;
+    min-width: fit-content;
+}
+
+.control-row.inline select {
+    flex: 1;
+    min-width: 150px;
+}
+
+/* Config group styling */
+.config-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+/* Display options group */
+.display-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+}
+
+.display-options .control-row.disabled {
+    opacity: 0.6;
+}
+
+/* Inline generation controls */
+.generation-controls {
+    margin-bottom: 12px;
+}
+
+.control-row.inline-generation {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.control-row.inline-generation label {
+    white-space: nowrap;
+}
+
+.control-row.inline-generation input[type="range"] {
+    flex: 1;
+    min-width: 100px;
+}
+
+.point-count-value {
+    min-width: 50px;
+    text-align: center;
+    font-weight: bold;
+    font-family: monospace;
+}
+
+.control-row.inline-generation button {
+    white-space: nowrap;
+    padding: 6px 12px;
+}
+
+/* Progress container for generation */
+.progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.progress-container .stop-button {
+    background: #cc4444;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.progress-container .stop-button:hover:not(:disabled) {
+    background: #dd5555;
+}
+
+/* Metric description styling */
+.metric-description {
+    margin: 10px 0;
+    padding: 10px;
+    background: rgba(100, 150, 255, 0.1);
+    border-left: 3px solid rgba(100, 150, 255, 0.5);
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.metric-description strong {
+    color: rgba(100, 150, 255, 1);
+}
+
+.info-text {
+    font-size: 11px;
+    color: var(--color-text-hover);
+    line-height: 1.4;
+}
+
+/* Ellipsoid controls section */
+.ellipsoid-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+}
+
+.ellipsoid-option {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ellipsoid-option .info-text {
+    margin-left: 22px;
+    font-size: 10px;
 }

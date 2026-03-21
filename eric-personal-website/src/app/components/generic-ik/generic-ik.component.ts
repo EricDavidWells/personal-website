@@ -85,6 +85,7 @@ interface PointCloudVisualization {
 
 interface WorkspaceVolumeVisualization {
   mesh: THREE.Mesh;
+  wireframe?: THREE.LineSegments;
   geometry: THREE.BufferGeometry;
   material: THREE.MeshBasicMaterial;
   volume: number;
@@ -259,6 +260,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Clean up workspace volume
     if (this.workspaceVolume) {
       this.scene.remove(this.workspaceVolume.mesh);
+
+      // Add cleanup for wireframe
+      if (this.workspaceVolume.wireframe) {
+        this.scene.remove(this.workspaceVolume.wireframe);
+        (this.workspaceVolume.wireframe.geometry as THREE.EdgesGeometry).dispose();
+        (this.workspaceVolume.wireframe.material as THREE.LineBasicMaterial).dispose();
+      }
+
       this.workspaceVolume.geometry.dispose();
       this.workspaceVolume.material.dispose();
       this.workspaceVolume = null;
@@ -416,6 +425,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       // Clear workspace volume when switching robots
       if (this.workspaceVolume) {
         this.scene.remove(this.workspaceVolume.mesh);
+
+        // Add cleanup for wireframe
+        if (this.workspaceVolume.wireframe) {
+          this.scene.remove(this.workspaceVolume.wireframe);
+          (this.workspaceVolume.wireframe.geometry as THREE.EdgesGeometry).dispose();
+          (this.workspaceVolume.wireframe.material as THREE.LineBasicMaterial).dispose();
+        }
+
         this.workspaceVolume.geometry.dispose();
         this.workspaceVolume.material.dispose();
         this.workspaceVolume = null;
@@ -1651,6 +1668,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Clean up existing
     if (this.workspaceVolume) {
       this.scene.remove(this.workspaceVolume.mesh);
+
+      // Add cleanup for wireframe
+      if (this.workspaceVolume.wireframe) {
+        this.scene.remove(this.workspaceVolume.wireframe);
+        (this.workspaceVolume.wireframe.geometry as THREE.EdgesGeometry).dispose();
+        (this.workspaceVolume.wireframe.material as THREE.LineBasicMaterial).dispose();
+      }
+
       this.workspaceVolume.geometry.dispose();
       this.workspaceVolume.material.dispose();
       this.workspaceVolume = null;
@@ -1698,14 +1723,30 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       transparent: true,
       opacity: 0.1,
       side: THREE.DoubleSide,
-      wireframe: true
+      depthWrite: false  // Add depth configuration
     });
+
+    // Create separate wireframe edges for better visibility
+    const edges = new THREE.EdgesGeometry(voxelGeometry);
+    const edgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.4,  // Translucent edges
+      depthWrite: false,
+      depthTest: true
+    });
+    const wireframe = new THREE.LineSegments(edges, edgeMaterial);
 
     const mesh = new THREE.Mesh(voxelGeometry, material);
     mesh.visible = this.showWorkspaceVolume;
+    mesh.renderOrder = 1;
     this.scene.add(mesh);
 
-    this.workspaceVolume = { mesh, geometry: voxelGeometry, material, volume: totalVolume, voxelSize };
+    wireframe.visible = this.showWorkspaceVolume;
+    wireframe.renderOrder = 2;
+    this.scene.add(wireframe);
+
+    this.workspaceVolume = { mesh, wireframe, geometry: voxelGeometry, material, volume: totalVolume, voxelSize };
 
     console.log(`Filtered volume: ${totalVolume.toFixed(6)} m³ (${voxelsArray.length} voxels)`);
   }
@@ -1714,6 +1755,14 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Clean up existing
     if (this.workspaceVolume) {
       this.scene.remove(this.workspaceVolume.mesh);
+
+      // Add cleanup for wireframe
+      if (this.workspaceVolume.wireframe) {
+        this.scene.remove(this.workspaceVolume.wireframe);
+        (this.workspaceVolume.wireframe.geometry as THREE.EdgesGeometry).dispose();
+        (this.workspaceVolume.wireframe.material as THREE.LineBasicMaterial).dispose();
+      }
+
       this.workspaceVolume.geometry.dispose();
       this.workspaceVolume.material.dispose();
       this.workspaceVolume = null;
@@ -1739,15 +1788,25 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
         // Add wireframe edges
         const edges = new THREE.EdgesGeometry(geometry);
-        const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x00ff88 });
+        const edgeMaterial = new THREE.LineBasicMaterial({
+          color: 0x00ff88,
+          transparent: true,
+          opacity: 0.2,  // Translucent edges
+          depthWrite: false,  // Don't write to depth buffer (like clipping planes)
+          depthTest: true  // Still test depth for proper layering
+        });
         const wireframe = new THREE.LineSegments(edges, edgeMaterial);
 
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.add(wireframe);
         mesh.visible = this.showWorkspaceVolume;
+        mesh.renderOrder = 1;  // Render mesh first
         this.scene.add(mesh);
 
-        this.workspaceVolume = { mesh, geometry, material, volume };
+        wireframe.visible = this.showWorkspaceVolume;
+        wireframe.renderOrder = 2;  // Render wireframe after mesh
+        this.scene.add(wireframe);  // Add as scene sibling
+
+        this.workspaceVolume = { mesh, wireframe, geometry, material, volume };
 
         console.log(`Workspace volume (convex hull): ${volume.toFixed(6)} m³`);
       } else {
@@ -1764,14 +1823,30 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
           transparent: true,
           opacity: 0.1,
           side: THREE.DoubleSide,
-          wireframe: true
+          depthWrite: false  // Add depth configuration
         });
+
+        // Create separate wireframe edges for better visibility
+        const edges = new THREE.EdgesGeometry(voxelGeometry);
+        const edgeMaterial = new THREE.LineBasicMaterial({
+          color: 0x00ffff,
+          transparent: true,
+          opacity: 0.2,  // Translucent edges
+          depthWrite: false,
+          depthTest: true
+        });
+        const wireframe = new THREE.LineSegments(edges, edgeMaterial);
 
         const mesh = new THREE.Mesh(voxelGeometry, material);
         mesh.visible = this.showWorkspaceVolume;
+        mesh.renderOrder = 1;
         this.scene.add(mesh);
 
-        this.workspaceVolume = { mesh, geometry: voxelGeometry, material, volume, voxelSize };
+        wireframe.visible = this.showWorkspaceVolume;
+        wireframe.renderOrder = 2;
+        this.scene.add(wireframe);
+
+        this.workspaceVolume = { mesh, wireframe, geometry: voxelGeometry, material, volume, voxelSize };
       }
     } catch (error) {
       console.error('Failed to create workspace volume visualization:', error);
@@ -2143,6 +2218,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   onWorkspaceVolumeVisibilityChange(): void {
     if (this.workspaceVolume) {
       this.workspaceVolume.mesh.visible = this.showWorkspaceVolume;
+      if (this.workspaceVolume.wireframe) {
+        this.workspaceVolume.wireframe.visible = this.showWorkspaceVolume;
+      }
     }
   }
 

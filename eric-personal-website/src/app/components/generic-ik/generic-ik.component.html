@@ -16,7 +16,7 @@
             <fieldset>
                 <legend>Robot Selection</legend>
                 <div class="workspace-controls">
-                    <div class="control-row">
+                    <div class="control-row inline">
                         <label for="urdfSelect">URDF:</label>
                         <select id="urdfSelect"
                                 [(ngModel)]="selectedUrdf"
@@ -68,164 +68,207 @@
             </fieldset>
 
             <fieldset>
-                <legend>Manipulability Workspace</legend>
+                <legend>Manipulability</legend>
 
                 <div class="workspace-controls">
-                    <div class="control-row">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="showPointCloud"
-                                   (change)="onPointCloudVisibilityChange()" />
-                            Show Point Cloud
-                        </label>
-                    </div>
-
-                    <div class="control-row">
-                        <label for="volumeMethod">Volume Method:</label>
-                        <select id="volumeMethod"
-                                [(ngModel)]="volumeMethod"
-                                (change)="onVolumeMethodChange()"
-                                [disabled]="!pointCloud">
-                            <option value="adaptive_voxel">Adaptive Voxel (recommended)</option>
-                            <option value="convex">Convex Hull (upper bound)</option>
-                        </select>
-                    </div>
-
-                    <div class="control-row">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="showWorkspaceVolume"
-                                   (change)="onWorkspaceVolumeVisibilityChange()"
-                                   [disabled]="!pointCloud" />
-                            Show Workspace Volume
-                        </label>
-                    </div>
-
-                    @if (workspaceVolume) {
-                        <div class="manip-info">
-                            <div class="manip-range">
-                                <span>Workspace Volume:</span>
-                                <span class="manip-value">
-                                    {{ workspaceVolume.volume | number:'1.6-6' }} m³
-                                </span>
-                            </div>
-                            @if (volumeMethod === 'adaptive_voxel' && workspaceVolume.voxelSize) {
-                                <div class="info-text" style="font-size: 10px; margin-top: 4px;">
-                                    Method: Adaptive voxel<br>
-                                    Voxel size: {{ workspaceVolume.voxelSize | number:'1.4-4' }} m (auto-tuned)
-                                </div>
-                            }
-                            @if (volumeMethod === 'convex') {
-                                <div class="info-text" style="font-size: 10px; margin-top: 4px;">
-                                    Method: Convex hull (upper bound)
-                                </div>
-                            }
+                    <!-- Point Cloud Generation Controls -->
+                    <div class="generation-controls">
+                        <div class="control-row inline-generation">
+                            <label for="pointCount">Point Count:</label>
+                            <input type="range"
+                                   id="pointCount"
+                                   [min]="50"
+                                   [max]="50000"
+                                   step="50"
+                                   [(ngModel)]="pointCloudCount"
+                                   [disabled]="isGeneratingPointCloud" />
+                            <span class="point-count-value">{{ pointCloudCount }}</span>
+                            <button (click)="regeneratePointCloud()"
+                                    [disabled]="isGeneratingPointCloud || !wasmModule">
+                                {{ isGeneratingPointCloud ? 'Generating...' : 'Generate Point Cloud' }}
+                            </button>
                         </div>
-                    }
-
-                    @if (pointCloud && averageManipulability !== null) {
-                        <div class="manip-info" style="margin-top: 8px;">
-                            <div style="font-weight: 500; margin-bottom: 4px;">Average Manipulability:</div>
-                            <div class="manip-range">
-                                <span>Volume:</span>
-                                <span class="manip-value">
-                                    {{ averageManipulability | number:'1.6-6' }}
-                                </span>
-                            </div>
-                            <div class="manip-range">
-                                <span>Condition:</span>
-                                <span class="manip-value">
-                                    {{ averageConditionNumber | number:'1.2-2' }}
-                                </span>
-                            </div>
-                            <div class="manip-range">
-                                <span>Orient. Volume:</span>
-                                <span class="manip-value">
-                                    {{ averageOrientationManipulability | number:'1.6-6' }}
-                                </span>
-                            </div>
-                            <div class="manip-range">
-                                <span>Orient. Condition:</span>
-                                <span class="manip-value">
-                                    {{ averageOrientationConditionNumber | number:'1.2-2' }}
-                                </span>
-                            </div>
-                        </div>
-                    }
-
-                    <div class="control-row">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="showClippingPlanes"
-                                   (change)="onClippingPlanesVisibilityChange()" />
-                            Show Clipping Planes
-                        </label>
-                    </div>
-
-                    <div class="control-row">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="enablePlaneFiltering"
-                                   (change)="onPlaneFilteringChange()"
-                                   [disabled]="!pointCloud" />
-                            Enable Plane Filtering
-                        </label>
-                    </div>
-
-                    <div class="control-row">
-                        <label for="manipMetric">Point Cloud Color:</label>
-                        <select id="manipMetric"
-                                [(ngModel)]="manipulabilityMetric"
-                                (change)="onManipulabilityMetricChange()">
-                            <option value="volume">Position Volume (wₚ)</option>
-                            <option value="condition">Position Condition (κₚ)</option>
-                            <option value="orientation_volume">Orientation Volume (wₒ)</option>
-                            <option value="orientation_condition">Orientation Condition (κₒ)</option>
-                        </select>
-                    </div>
-
-                    <div class="control-row">
-                        <label for="pointCount">Point Count: {{ pointCloudCount }}</label>
-                        <input type="range"
-                               id="pointCount"
-                               [min]="50"
-                               [max]="50000"
-                               step="50"
-                               [(ngModel)]="pointCloudCount"
-                               [disabled]="isGeneratingPointCloud" />
-                        <div class="range-labels">
-                            <span>50</span>
-                            <span>50000</span>
-                        </div>
-                    </div>
-
-                    <div class="button-group">
-                        <button (click)="regeneratePointCloud()"
-                                [disabled]="isGeneratingPointCloud || !wasmModule">
-                            Generate Point Cloud
-                        </button>
 
                         @if (isGeneratingPointCloud) {
-                            <button (click)="cancelPointCloudGeneration()"
-                                    class="cancel-button">
-                                Stop
-                            </button>
+                            <div class="progress-container">
+                                <div class="progress-bar">
+                                    <div class="progress-fill"
+                                         [style.width.%]="pointCloudProgress"></div>
+                                </div>
+                                <div class="progress-text">{{ pointCloudProgress | number:'1.0-0' }}%</div>
+                                <button class="stop-button" (click)="cancelPointCloudGeneration()">
+                                    Stop
+                                </button>
+                            </div>
                         }
                     </div>
 
-                    @if (isGeneratingPointCloud) {
-                        <div class="progress-bar">
-                            <div class="progress-fill"
-                                 [style.width.%]="pointCloudProgress"></div>
+                    <!-- Configuration Group -->
+                    <div class="config-group">
+                        <div class="control-row inline">
+                            <label for="volumeMethod">Volume Method:</label>
+                            <select id="volumeMethod"
+                                    [(ngModel)]="volumeMethod"
+                                    (change)="onVolumeMethodChange()">
+                                <option value="adaptive_voxel">Adaptive Voxel (recommended)</option>
+                                <option value="convex">Convex Hull (upper bound)</option>
+                            </select>
                         </div>
-                        <div class="progress-text">{{ pointCloudProgress | number:'1.0-0' }}%</div>
+
+                        <div class="control-row inline">
+                            <label for="manipMetric">Point Cloud Color:</label>
+                            <select id="manipMetric"
+                                    [(ngModel)]="manipulabilityMetric"
+                                    (change)="onManipulabilityMetricChange()">
+                                <option value="volume">Position Ellipsoid Volume (wₚ)</option>
+                                <option value="condition">Position Isotropy (κₚ)</option>
+                                <option value="orientation_volume">Orientation Ellipsoid Volume (wₒ)</option>
+                                <option value="orientation_condition">Orientation Isotropy (κₒ)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Metric Description -->
+                    @if (manipulabilityMetric) {
+                        <div class="metric-description">
+                            @if (manipulabilityMetric === 'volume') {
+                                <strong>Position Ellipsoid Volume (wₚ):</strong> Measures how easily the robot can move linearly in all directions. Higher values indicate better position manipulability.
+                            }
+                            @if (manipulabilityMetric === 'condition') {
+                                <strong>Position Isotropy (κₚ):</strong> Measures uniformity of motion in all directions. Values near 1.0 indicate equal ease of motion in all directions. Higher is better.
+                            }
+                            @if (manipulabilityMetric === 'orientation_volume') {
+                                <strong>Orientation Ellipsoid Volume (wₒ):</strong> Measures how easily the robot can rotate around all axes. Higher values indicate better orientation manipulability.
+                            }
+                            @if (manipulabilityMetric === 'orientation_condition') {
+                                <strong>Orientation Isotropy (κₒ):</strong> Measures uniformity of rotation around all axes. Values near 1.0 indicate equal ease of rotation around all axes. Higher is better.
+                            }
+                        </div>
                     }
 
+                    <!-- Display Options Group -->
+                    <div class="display-options">
+                        <div class="control-row">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="showPointCloud"
+                                       (change)="onPointCloudVisibilityChange()" />
+                                Show Point Cloud
+                            </label>
+                        </div>
+                        <div class="control-row">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="showWorkspaceVolume"
+                                       (change)="onWorkspaceVolumeVisibilityChange()"
+                                       [disabled]="!pointCloud" />
+                                Show Workspace Volume
+                            </label>
+                        </div>
+                        <div class="control-row">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="showClippingPlanes"
+                                       (change)="onClippingPlanesVisibilityChange()" />
+                                Show Clipping Planes
+                            </label>
+                        </div>
+                        <div class="control-row" [class.disabled]="!showClippingPlanes">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="enablePlaneFiltering"
+                                       (change)="onPlaneFilteringChange()"
+                                       [disabled]="!pointCloud" />
+                                Enable Plane Filtering
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Manipulability Ellipsoid Controls -->
+                    <div class="ellipsoid-controls">
+                        <div class="ellipsoid-option">
+                            <div class="control-row">
+                                <label>
+                                    <input type="checkbox"
+                                           [(ngModel)]="showPositionEllipsoid"
+                                           (change)="onPositionEllipsoidVisibilityChange()" />
+                                    Position Ellipsoid (Blue)
+                                </label>
+                            </div>
+                            <div class="info-text">
+                                Directions of easiest linear motion. Near singularities, ellipsoid becomes flat/needle-shaped.
+                            </div>
+                        </div>
+
+                        <div class="ellipsoid-option">
+                            <div class="control-row">
+                                <label>
+                                    <input type="checkbox"
+                                           [(ngModel)]="showOrientationEllipsoid"
+                                           (change)="onOrientationEllipsoidVisibilityChange()" />
+                                    Orientation Ellipsoid (Green)
+                                </label>
+                            </div>
+                            <div class="info-text">
+                                Directions of easiest rotation (scaled 10x). Near singularities, ellipsoid becomes flat/needle-shaped.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>Information</legend>
+
+                <div class="workspace-controls">
+                    <!-- Combined Workspace Info -->
+                    @if (workspaceVolume || (pointCloud && averageManipulability !== null)) {
+                        <div class="manip-info">
+                            @if (workspaceVolume) {
+                                <div class="manip-range">
+                                    <span>Workspace Volume:</span>
+                                    <span class="manip-value">
+                                        {{ workspaceVolume.volume | number:'1.6-6' }} m³
+                                    </span>
+                                </div>
+                            }
+
+                            @if (pointCloud && averageManipulability !== null) {
+                                <div class="info-section-header">Average Manipulability:</div>
+                                <div class="manip-range">
+                                    <span>Position Ellipsoid Volume:</span>
+                                    <span class="manip-value">
+                                        {{ averageManipulability | number:'1.6-6' }}
+                                    </span>
+                                </div>
+                                <div class="manip-range">
+                                    <span>Position Isotropy:</span>
+                                    <span class="manip-value">
+                                        {{ averageConditionNumber | number:'1.2-2' }}
+                                    </span>
+                                </div>
+                                <div class="manip-range">
+                                    <span>Orientation Ellipsoid Volume:</span>
+                                    <span class="manip-value">
+                                        {{ averageOrientationManipulability | number:'1.6-6' }}
+                                    </span>
+                                </div>
+                                <div class="manip-range">
+                                    <span>Orientation Isotropy:</span>
+                                    <span class="manip-value">
+                                        {{ averageOrientationConditionNumber | number:'1.2-2' }}
+                                    </span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Color Legend -->
                     @if (pointCloud && !isGeneratingPointCloud) {
                         <div class="manip-info">
                             @if (manipulabilityMetric === 'volume') {
                                 <div class="manip-range">
-                                    <span>Position Volume Range:</span>
+                                    <span>Position Ellipsoid Volume Range:</span>
                                     <span class="manip-value">
                                         {{ manipulabilityRange.min | number:'1.4-4' }} -
                                         {{ manipulabilityRange.max | number:'1.4-4' }}
@@ -241,7 +284,7 @@
                             }
                             @if (manipulabilityMetric === 'condition') {
                                 <div class="manip-range">
-                                    <span>Position Condition Range:</span>
+                                    <span>Position Isotropy Range:</span>
                                     <span class="manip-value">
                                         {{ conditionNumberRange.min | number:'1.2-2' }} -
                                         {{ conditionNumberRange.max | number:'1.2-2' }}
@@ -250,14 +293,14 @@
                                 <div class="color-legend">
                                     <div class="legend-gradient"></div>
                                     <div class="legend-labels">
-                                        <span>Ill-conditioned (Low)</span>
-                                        <span>Well-conditioned (High)</span>
+                                        <span>Anisotropic (Low)</span>
+                                        <span>Isotropic (High)</span>
                                     </div>
                                 </div>
                             }
                             @if (manipulabilityMetric === 'orientation_volume') {
                                 <div class="manip-range">
-                                    <span>Orientation Volume Range:</span>
+                                    <span>Orientation Ellipsoid Volume Range:</span>
                                     <span class="manip-value">
                                         {{ orientationManipulabilityRange.min | number:'1.4-4' }} -
                                         {{ orientationManipulabilityRange.max | number:'1.4-4' }}
@@ -273,7 +316,7 @@
                             }
                             @if (manipulabilityMetric === 'orientation_condition') {
                                 <div class="manip-range">
-                                    <span>Orientation Condition Range:</span>
+                                    <span>Orientation Isotropy Range:</span>
                                     <span class="manip-value">
                                         {{ orientationConditionNumberRange.min | number:'1.2-2' }} -
                                         {{ orientationConditionNumberRange.max | number:'1.2-2' }}
@@ -282,54 +325,11 @@
                                 <div class="color-legend">
                                     <div class="legend-gradient"></div>
                                     <div class="legend-labels">
-                                        <span>Ill-conditioned (Low)</span>
-                                        <span>Well-conditioned (High)</span>
+                                        <span>Anisotropic (Low)</span>
+                                        <span>Isotropic (High)</span>
                                     </div>
                                 </div>
                             }
-                        </div>
-                    }
-                </div>
-            </fieldset>
-
-            <fieldset>
-                <legend>Manipulability Ellipsoid</legend>
-
-                <div class="workspace-controls">
-                    <div class="control-row">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="showManipulabilityEllipsoid"
-                                   (change)="onManipulabilityEllipsoidVisibilityChange()" />
-                            Show Ellipsoid
-                        </label>
-                    </div>
-
-                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="showPositionEllipsoid"
-                                   (change)="onPositionEllipsoidVisibilityChange()"
-                                   [disabled]="!showManipulabilityEllipsoid" />
-                            Position Ellipsoid (Blue)
-                        </label>
-                    </div>
-
-                    <div class="control-row" [class.disabled]="!showManipulabilityEllipsoid">
-                        <label>
-                            <input type="checkbox"
-                                   [(ngModel)]="showOrientationEllipsoid"
-                                   (change)="onOrientationEllipsoidVisibilityChange()"
-                                   [disabled]="!showManipulabilityEllipsoid" />
-                            Orientation Ellipsoid (Green)
-                        </label>
-                    </div>
-
-                    @if (showManipulabilityEllipsoid) {
-                        <div class="info-text">
-                            <strong>Blue:</strong> Position ellipsoid - directions of easiest linear motion.<br>
-                            <strong>Green:</strong> Orientation ellipsoid - directions of easiest rotation (scaled 10x).<br>
-                            Near singularities, ellipsoids become flat/needle-shaped.
                         </div>
                     }
                 </div>
