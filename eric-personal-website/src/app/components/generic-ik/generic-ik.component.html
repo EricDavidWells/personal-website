@@ -77,7 +77,7 @@
                             <label for="pointCount">Point Count:</label>
                             <input type="range"
                                    id="pointCount"
-                                   [min]="50"
+                                   [min]="2000"
                                    [max]="50000"
                                    step="50"
                                    [(ngModel)]="pointCloudCount"
@@ -105,6 +105,17 @@
 
                     <!-- Configuration Group -->
                     <div class="config-group">
+                        <div class="control-row inline">
+                            <label for="targetLink">Target Link:</label>
+                            <select id="targetLink"
+                                    [(ngModel)]="targetLink"
+                                    (change)="onTargetLinkChange()">
+                                @for (link of availableLinks; track link) {
+                                    <option [value]="link">{{ link }}</option>
+                                }
+                            </select>
+                        </div>
+
                         <div class="control-row inline">
                             <label for="volumeMethod">Volume Method:</label>
                             <select id="volumeMethod"
@@ -182,36 +193,21 @@
                                 Enable Plane Filtering
                             </label>
                         </div>
-                    </div>
-
-                    <!-- Manipulability Ellipsoid Controls -->
-                    <div class="ellipsoid-controls">
-                        <div class="ellipsoid-option">
-                            <div class="control-row">
-                                <label>
-                                    <input type="checkbox"
-                                           [(ngModel)]="showPositionEllipsoid"
-                                           (change)="onPositionEllipsoidVisibilityChange()" />
-                                    Position Ellipsoid (Blue)
-                                </label>
-                            </div>
-                            <div class="info-text">
-                                Directions of easiest linear motion. Near singularities, ellipsoid becomes flat/needle-shaped.
-                            </div>
+                        <div class="control-row">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="showPositionEllipsoid"
+                                       (change)="onPositionEllipsoidVisibilityChange()" />
+                                Position Ellipsoid (Blue)
+                            </label>
                         </div>
-
-                        <div class="ellipsoid-option">
-                            <div class="control-row">
-                                <label>
-                                    <input type="checkbox"
-                                           [(ngModel)]="showOrientationEllipsoid"
-                                           (change)="onOrientationEllipsoidVisibilityChange()" />
-                                    Orientation Ellipsoid (Green)
-                                </label>
-                            </div>
-                            <div class="info-text">
-                                Directions of easiest rotation (scaled 10x). Near singularities, ellipsoid becomes flat/needle-shaped.
-                            </div>
+                        <div class="control-row">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="showOrientationEllipsoid"
+                                       (change)="onOrientationEllipsoidVisibilityChange()" />
+                                Orientation Ellipsoid (Green)
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -221,6 +217,72 @@
                 <legend>Information</legend>
 
                 <div class="workspace-controls">
+                    <!-- Current EE Pose -->
+                    @if (eePosition && eeQuaternion) {
+                        <div class="manip-info">
+                            <div class="info-section-header">End-Effector Pose:</div>
+                            <div class="manip-range">
+                                <span>Position X:</span>
+                                <span class="manip-value">{{ eePosition.x | number:'1.4-4' }} m</span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Position Y:</span>
+                                <span class="manip-value">{{ eePosition.y | number:'1.4-4' }} m</span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Position Z:</span>
+                                <span class="manip-value">{{ eePosition.z | number:'1.4-4' }} m</span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Quaternion X:</span>
+                                <span class="manip-value">{{ eeQuaternion.x | number:'1.4-4' }}</span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Quaternion Y:</span>
+                                <span class="manip-value">{{ eeQuaternion.y | number:'1.4-4' }}</span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Quaternion Z:</span>
+                                <span class="manip-value">{{ eeQuaternion.z | number:'1.4-4' }}</span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Quaternion W:</span>
+                                <span class="manip-value">{{ eeQuaternion.w | number:'1.4-4' }}</span>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Current Manipulability -->
+                    @if (currentManipulability !== null) {
+                        <div class="manip-info">
+                            <div class="info-section-header">Current Manipulability:</div>
+                            <div class="manip-range">
+                                <span>Position Ellipsoid Volume:</span>
+                                <span class="manip-value">
+                                    {{ currentManipulability | number:'1.6-6' }}
+                                </span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Position Isotropy:</span>
+                                <span class="manip-value">
+                                    {{ currentConditionNumber | number:'1.2-2' }}
+                                </span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Orientation Ellipsoid Volume:</span>
+                                <span class="manip-value">
+                                    {{ currentOrientationManipulability | number:'1.6-6' }}
+                                </span>
+                            </div>
+                            <div class="manip-range">
+                                <span>Orientation Isotropy:</span>
+                                <span class="manip-value">
+                                    {{ currentOrientationConditionNumber | number:'1.2-2' }}
+                                </span>
+                            </div>
+                        </div>
+                    }
+
                     <!-- Combined Workspace Info -->
                     @if (workspaceVolume || (pointCloud && averageManipulability !== null)) {
                         <div class="manip-info">

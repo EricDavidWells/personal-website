@@ -50,6 +50,7 @@ interface KinematicsModule {
   fkFlat(tree: any, linkName: string): any;
   getJointLimits(tree: any, jointName: string): any;
   getLinkNames(tree: any): any;
+  getRootLink(tree: any): string;
   getJointInfo(tree: any): any;
   getPositionManipulability(
     tree: any,
@@ -164,7 +165,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   showPointCloud = false;
   showWorkspaceVolume = false;
   volumeMethod: 'convex' | 'adaptive_voxel' = 'adaptive_voxel';
-  pointCloudCount = 200;
+  pointCloudCount = 2000;
   isGeneratingPointCloud = false;
   pointCloudProgress = 0;
   showClippingPlanes = false;
@@ -173,6 +174,21 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   availableUrdfs: Array<{ name: string; label: string }> = [];
   manipulabilityMetric: 'volume' | 'condition' | 'orientation_volume' | 'orientation_condition' = 'volume';
   private cancelGeneration = false;
+
+  // Target link selection
+  targetLink = 'ee_link';
+  availableLinks: string[] = [];
+  rootLink = 'base_link';
+
+  // Current manipulability values
+  currentManipulability: number | null = null;
+  currentConditionNumber: number | null = null;
+  currentOrientationManipulability: number | null = null;
+  currentOrientationConditionNumber: number | null = null;
+
+  // Current end-effector pose
+  eePosition: THREE.Vector3 | null = null;
+  eeQuaternion: THREE.Quaternion | null = null;
 
   // Manipulability ellipsoid controls
   showManipulabilityEllipsoid = true;
@@ -403,6 +419,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         throw new Error(`Failed to parse URDF: ${wasmError}`);
       }
 
+      this.rootLink = this.wasmModule.getRootLink(this.kinematicTree) || 'base_link';
       this.extractJointInfo();
       this.buildRobot();
 
@@ -515,6 +532,21 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     this.loading = false;
   }
 
+  onTargetLinkChange(): void {
+    // Update manipulability calculations with new target link
+    if (!this.wasmModule || !this.kinematicTree) return;
+
+    // Update current manipulability visualization
+    if (this.showManipulabilityEllipsoid) {
+      this.createManipulabilityEllipsoidVisualization();
+    }
+
+    // Regenerate point cloud if one exists
+    if (this.pointCloud) {
+      this.regeneratePointCloud();
+    }
+  }
+
   private extractJointInfo(): void {
     const infoVec = this.wasmModule!.getJointInfo(this.kinematicTree);
     this.jointInfoList = [];
@@ -555,6 +587,18 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       linkNames.push(linkNamesVec.get(i));
     }
     linkNamesVec.delete();
+
+    // Populate available links for target link selection
+    this.availableLinks = [...linkNames];
+
+    // Set default target link if not already set or if current selection is invalid
+    if (!this.targetLink || !this.availableLinks.includes(this.targetLink)) {
+      if (linkNames.includes('ee_link')) {
+        this.targetLink = 'ee_link';
+      } else if (linkNames.length > 0) {
+        this.targetLink = linkNames[linkNames.length - 1]; // Use last link as default
+      }
+    }
 
     for (const linkName of linkNames) {
       const group = new THREE.Group();
@@ -647,6 +691,13 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         // Some links (like 'world') may not have a valid FK chain
       }
     });
+
+    // Update end-effector pose display
+    const eeGroup = this.linkGroups.get(this.targetLink);
+    if (eeGroup) {
+      this.eePosition = eeGroup.position.clone();
+      this.eeQuaternion = eeGroup.quaternion.clone();
+    }
 
     // Position cylinders between connected joints
     for (const info of this.jointInfoList) {
@@ -2098,8 +2149,8 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
       const manip = this.wasmModule.getManipulability(
         this.kinematicTree,
-        'ee_link',
-        'base_link',
+        this.targetLink,
+        this.rootLink,
         jointNamesVec
       );
       jointNamesVec.delete();
@@ -2110,8 +2161,28 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
 
+      // Store current manipulability values
+      this.currentManipulability = manip.wPos;
+      this.currentOrientationManipulability = manip.wOri;
+
+      // Calculate condition numbers (isotropy) from eigenvalues
+      const posValues = this.extractValuesFromVector(manip.posValues);
+      const oriValues = this.extractValuesFromVector(manip.oriValues);
+
+      if (posValues.length === 3) {
+        const posMax = Math.max(...posValues);
+        const posMin = Math.min(...posValues.filter(v => v > 1e-10)); // Avoid division by very small numbers
+        this.currentConditionNumber = posMin > 1e-10 ? posMin / posMax : 0;
+      }
+
+      if (oriValues.length === 3) {
+        const oriMax = Math.max(...oriValues);
+        const oriMin = Math.min(...oriValues.filter(v => v > 1e-10));
+        this.currentOrientationConditionNumber = oriMin > 1e-10 ? oriMin / oriMax : 0;
+      }
+
       // Get end-effector position
-      const flatVec = this.wasmModule.fkFlat(this.kinematicTree, 'ee_link');
+      const flatVec = this.wasmModule.fkFlat(this.kinematicTree, this.targetLink);
       const elements: number[] = [];
       for (let i = 0; i < 16; i++) elements.push(flatVec.get(i));
       flatVec.delete();
@@ -2119,11 +2190,9 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       const mat4 = new THREE.Matrix4().fromArray(elements);
       const eePosition = new THREE.Vector3().setFromMatrixPosition(mat4);
 
-      // Extract ellipsoid data
+      // Extract ellipsoid data (posValues and oriValues already extracted above)
       const posAxes = this.extractAxesFromVector(manip.posAxes);
-      const posValues = this.extractValuesFromVector(manip.posValues);
       const oriAxes = this.extractAxesFromVector(manip.oriAxes);
-      const oriValues = this.extractValuesFromVector(manip.oriValues);
 
       // Create position ellipsoid (blue) with fixed 0.3 opacity
       const posEllipsoid = this.createEllipsoidMesh(
@@ -2212,6 +2281,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   onPointCloudVisibilityChange(): void {
     if (this.pointCloud) {
       this.pointCloud.points.visible = this.showPointCloud;
+      this.pointCloud.visible = this.showPointCloud;
     }
   }
 
@@ -2442,7 +2512,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       // Get end-effector position via FK
-      const flatVec = this.wasmModule.fkFlat(this.kinematicTree, 'ee_link');
+      const flatVec = this.wasmModule.fkFlat(this.kinematicTree, this.targetLink);
       const elements: number[] = [];
       for (let k = 0; k < 16; k++) elements.push(flatVec.get(k));
       flatVec.delete();
@@ -2462,8 +2532,8 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       // Compute manipulability for points that passed the filter
       const manip = this.wasmModule.getManipulability(
         this.kinematicTree,
-        'ee_link',
-        'base_link',
+        this.targetLink,
+        this.rootLink,
         jointNamesVec
       );
 

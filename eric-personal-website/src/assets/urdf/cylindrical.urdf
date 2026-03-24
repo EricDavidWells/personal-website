@@ -1,0 +1,79 @@
+<?xml version="1.0" ?>
+<robot name="cylindrical">
+	<!-- ********** KINEMATIC PROPERTIES (JOINTS) ********** -->
+	<joint name="world_joint" type="fixed">
+		<parent link="world"/>
+		<child link="base_link"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+	</joint>
+
+	<!-- Joint 1: waist rotation about Z -->
+	<joint name="joint1" type="revolute">
+		<parent link="base_link"/>
+		<child link="link1"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.15"/>
+		<axis xyz="0 0 1"/>
+		<limit effort="50" velocity="2.0" lower="-3.14159" upper="3.14159"/>
+	</joint>
+
+	<!-- Joint 2: vertical (Z) prismatic -->
+	<joint name="joint2" type="prismatic">
+		<parent link="link1"/>
+		<child link="link2"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+		<axis xyz="0 0 1"/>
+		<limit effort="50" velocity="0.5" lower="0.0" upper="0.5"/>
+	</joint>
+
+	<!-- Joint 3: radial (X) prismatic -->
+	<joint name="joint3" type="prismatic">
+		<parent link="link2"/>
+		<child link="link3"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.1"/>
+		<axis xyz="1 0 0"/>
+		<limit effort="30" velocity="0.5" lower="0.15" upper="0.55"/>
+	</joint>
+
+	<joint name="ee_joint" type="fixed">
+		<parent link="link3"/>
+		<child link="ee_link"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+	</joint>
+
+	<!-- ********** INERTIAL PROPERTIES (LINKS) ********** -->
+	<link name="world"/>
+
+	<link name="base_link">
+		<inertial>
+			<mass value="10.0"/>
+			<origin rpy="0 0 0" xyz="0.0 0.0 0.075"/>
+			<inertia ixx="0.05" ixy="0.0" ixz="0.0" iyy="0.05" iyz="0.0" izz="0.05"/>
+		</inertial>
+	</link>
+
+	<link name="link1">
+		<inertial>
+			<mass value="3.0"/>
+			<origin rpy="0 0 0" xyz="0.0 0.0 0.1"/>
+			<inertia ixx="0.02" ixy="0.0" ixz="0.0" iyy="0.02" iyz="0.0" izz="0.01"/>
+		</inertial>
+	</link>
+
+	<link name="link2">
+		<inertial>
+			<mass value="2.0"/>
+			<origin rpy="0 0 0" xyz="0.0 0.0 0.05"/>
+			<inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.01" iyz="0.0" izz="0.005"/>
+		</inertial>
+	</link>
+
+	<link name="link3">
+		<inertial>
+			<mass value="1.0"/>
+			<origin rpy="0 0 0" xyz="0.2 0.0 0.0"/>
+			<inertia ixx="0.005" ixy="0.0" ixz="0.0" iyy="0.02" iyz="0.0" izz="0.02"/>
+		</inertial>
+	</link>
+
+	<link name="ee_link"/>
+</robot>

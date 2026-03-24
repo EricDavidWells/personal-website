@@ -45,6 +45,13 @@ std::vector<std::string> get_link_names(const Tree & tree)
   return names;
 }
 
+std::string get_root_link(const Tree & tree)
+{
+  auto root = tree.get_root_node();
+  if (!root) return "";
+  return kinematics::get_name<double>(*root.value());
+}
+
 struct JointInfo
 {
   std::string name;
@@ -231,6 +238,7 @@ EMSCRIPTEN_BINDINGS(kinematics_module)
   function("fkFlat", &fk_flat);
   function("getJointLimits", &get_joint_limits);
   function("getLinkNames", &get_link_names);
+  function("getRootLink", &get_root_link);
   function("getJointInfo", &get_joint_info);
   function("getPositionManipulability", &get_position_manipulability);
   function("getManipulability", &get_manipulability);

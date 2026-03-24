@@ -18,5 +18,25 @@
   {
     "name": "simple_3dof_f_a_fn45",
     "label": "simple_3dof_f_a_fn45"
+  },
+  {
+    "name": "franka",
+    "label": "Franka FR3 (7DOF)"
+  },
+  {
+    "name": "scara",
+    "label": "SCARA (4DOF)"
+  },
+  {
+    "name": "gantry",
+    "label": "Gantry (3P Cartesian)"
+  },
+  {
+    "name": "cylindrical",
+    "label": "Cylindrical (1R+2P)"
+  },
+  {
+    "name": "stanford_arm",
+    "label": "Stanford Arm (2R+1P+3R)"
   }
 ]
