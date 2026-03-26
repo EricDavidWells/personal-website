@@ -1,0 +1,76 @@
+<?xml version="1.0" ?>
+<robot name="simple_3dof">
+	<!-- ********** KINEMATIC PROPERTIES (JOINTS) ********** -->
+	<joint name="world_joint" type="fixed">
+		<parent link="world"/>
+		<child link="base_link"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+	</joint>
+
+	<joint name="joint1" type="revolute">
+		<parent link="base_link"/>
+		<child link="link1"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+		<axis xyz="1 0 0"/>
+		<limit effort="30" velocity="2.0" lower="-1.5708" upper="1.5708" />
+	</joint>
+
+	<joint name="joint2" type="revolute">
+		<parent link="link1"/>
+		<child link="link2"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+		<axis xyz="0 0 1"/>
+		<limit effort="30" velocity="2.0" lower="-1.5708" upper="1.5708" />
+	</joint>
+
+	<joint name="joint3" type="revolute">
+		<parent link="link2"/>
+		<child link="link3"/>
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.4 0.0"/>
+		<axis xyz="1 0 0"/>
+		<limit effort="30" velocity="2.0" lower="-1.5708" upper="0." />
+	</joint>
+
+	<joint name="ee_joint" type="fixed">
+		<origin rpy="0.0 0.0 0.0" xyz="0.0 0.4 0.0"/>
+		<parent link="link3"/>
+		<child link="ee_link"/>
+	</joint>
+
+	<!-- ********** INERTIAL PROPERTIES (LINKS) ********** -->
+	<link name="world"/>
+
+	<link name="base_link">
+		<inertial>
+			<mass value="1.0"/>
+			<origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
+			<inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+		</inertial>
+	</link>
+
+	<link name="link1">
+		<inertial>
+			<mass value="0.5"/>
+			<origin rpy="0 0 0" xyz="0.15 0.0 0.0"/>
+			<inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+		</inertial>
+	</link>
+
+	<link name="link2">
+		<inertial>
+			<mass value="0.5"/>
+			<origin rpy="0 0 0" xyz="0.15 0.0 0.0"/>
+			<inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+		</inertial>
+	</link>
+
+	<link name="link3">
+		<inertial>
+			<mass value="0.3"/>
+			<origin rpy="0 0 0" xyz="0.1 0.0 0.0"/>
+			<inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+		</inertial>
+	</link>
+
+	<link name="ee_link"/>
+</robot>

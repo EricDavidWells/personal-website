@@ -2449,6 +2449,82 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
     // Re-color the existing point cloud with the new metric
     if (this.pointCloud) {
       this.createPointCloudVisualization(this.pointCloud.data);
+      // Re-apply plane filtering if active (createPointCloudVisualization renders all points)
+      if (this.enablePlaneFiltering) {
+        this.updatePointCloudFiltering();
+      }
+    }
+  }
+
+  async onLoadUrdfFile(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    if (!input.files?.length) return;
+    const file = input.files[0];
+    input.value = ''; // allow re-loading the same file
+    const urdfContent = await file.text();
+    this.loading = true;
+    try {
+      await this.loadUrdfFromContent(urdfContent, file.name.replace(/\.urdf$/i, ''));
+    } catch (e: any) {
+      this.errorMessage = e.message || String(e);
+    }
+    this.loading = false;
+  }
+
+  private async loadUrdfFromContent(urdfContent: string, label: string): Promise<void> {
+    if (!this.wasmModule) return;
+    try {
+      this.clearRobot();
+      if (this.kinematicTree) {
+        try { this.kinematicTree.delete(); } catch { /* ignore */ }
+        this.kinematicTree = null;
+      }
+      if (!urdfContent || urdfContent.trim().length === 0) {
+        throw new Error('URDF file is empty');
+      }
+      try {
+        this.kinematicTree = this.wasmModule.loadUrdfFromString(urdfContent);
+      } catch (wasmError) {
+        throw new Error(`Failed to parse URDF: ${wasmError}`);
+      }
+      this.rootLink = this.wasmModule.getRootLink(this.kinematicTree) || 'base_link';
+      this.extractJointInfo();
+      this.buildRobot();
+      if (this.pointCloud) {
+        this.scene.remove(this.pointCloud.points);
+        this.pointCloud.geometry.dispose();
+        this.pointCloud.material.dispose();
+        this.pointCloud = null;
+        this.manipulabilityRange = { min: Infinity, max: -Infinity };
+        this.conditionNumberRange = { min: Infinity, max: -Infinity };
+        this.orientationManipulabilityRange = { min: Infinity, max: -Infinity };
+        this.orientationConditionNumberRange = { min: Infinity, max: -Infinity };
+        this.averageManipulability = null;
+        this.averageConditionNumber = null;
+        this.averageOrientationManipulability = null;
+        this.averageOrientationConditionNumber = null;
+      }
+      if (this.workspaceVolume) {
+        this.scene.remove(this.workspaceVolume.mesh);
+        if (this.workspaceVolume.wireframe) {
+          this.scene.remove(this.workspaceVolume.wireframe);
+          (this.workspaceVolume.wireframe.geometry as THREE.EdgesGeometry).dispose();
+          (this.workspaceVolume.wireframe.material as THREE.LineBasicMaterial).dispose();
+        }
+        this.workspaceVolume.geometry.dispose();
+        this.workspaceVolume.material.dispose();
+        this.workspaceVolume = null;
+      }
+      this.optimalVoxelSize = null;
+      this.cachedVoxelMap = null;
+      this.cachedConnectedVoxels = null;
+      this.selectedUrdf = `[${label}]`;
+      this.errorMessage = null;
+    } catch (error: any) {
+      const errorMsg = `Failed to load URDF "${label}": ${error.message || String(error)}`;
+      console.error(errorMsg, error);
+      this.errorMessage = errorMsg;
+      throw error;
     }
   }
 
@@ -2547,7 +2623,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       }
       const maxPosValue = Math.max(...posValues);
       const minPosValue = Math.min(...posValues);
-      const conditionNumber = minPosValue / maxPosValue;  // Reciprocal: 0 (singular) to 1 (well-conditioned)
+      const conditionNumber = maxPosValue > 1e-10 ? minPosValue / maxPosValue : 0;  // Reciprocal: 0 (singular) to 1 (well-conditioned)
 
       // Calculate reciprocal condition number from orientation singular values
       const oriValues = [];
@@ -2556,7 +2632,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       }
       const maxOriValue = Math.max(...oriValues);
       const minOriValue = Math.min(...oriValues);
-      const orientationConditionNumber = minOriValue / maxOriValue;
+      const orientationConditionNumber = maxOriValue > 1e-10 ? minOriValue / maxOriValue : 0;
 
       // Clean up WASM vectors
       manip.posAxes.delete();

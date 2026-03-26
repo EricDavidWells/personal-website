@@ -14,3 +14,10 @@
   RewriteRule . /index.html [L]
 </IfModule>
 ```
+
+TODO:
+- write up quickly explainig the metrics, and tools to use
+- write up comparing shoulder joint rotation first vs. rotation second
+- load urdf button
+- if you choose new robot during point cloud generation it freezes
+- spherical shoulder, better layout, discussion

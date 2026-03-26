@@ -12,6 +12,14 @@
     "label": "simple_3dof_f_a_f"
   },
   {
+    "name": "shoulder_joint_rotation_first",
+    "label": "shoulder_joint_rotation_first"
+  },
+  {
+    "name": "shoulder_joint_rotation_second",
+    "label": "shoulder_joint_rotation_second"
+  },
+  {
     "name": "simple_3dof_f_a_f45",
     "label": "simple_3dof_f_a_f45"
   },
@@ -38,5 +46,9 @@
   {
     "name": "stanford_arm",
     "label": "Stanford Arm (2R+1P+3R)"
+  },
+  {
+    "name": "shoulder_3r",
+    "label": "Spherical Shoulder (3R ZYX)"
   }
 ]

@@ -27,6 +27,14 @@
                         </select>
                     </div>
                     <div class="control-row">
+                        <input #urdfFileInput type="file" accept=".urdf,.xml"
+                               style="display:none"
+                               (change)="onLoadUrdfFile($event)" />
+                        <button (click)="urdfFileInput.click()" [disabled]="loading">
+                            Load URDF File…
+                        </button>
+                    </div>
+                    <div class="control-row">
                         <label>
                             <input type="checkbox"
                                    [(ngModel)]="showRobot"
@@ -127,7 +135,7 @@
                         </div>
 
                         <div class="control-row inline">
-                            <label for="manipMetric">Point Cloud Color:</label>
+                            <label for="manipMetric">Point Cloud Metric:</label>
                             <select id="manipMetric"
                                     [(ngModel)]="manipulabilityMetric"
                                     (change)="onManipulabilityMetricChange()">
