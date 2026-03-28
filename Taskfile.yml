@@ -3,6 +3,9 @@ version: '3'
 vars:
   WASM_BUILD_DIR: eric-personal-website/wasm/build
   ANGULAR_DIR: eric-personal-website
+  DIST_DIR: eric-personal-website/dist/eric-david-wells/browser
+  SSH_HOST: hostgator
+  REMOTE_DIR: ~/public_html
 
 tasks:
   build:
@@ -23,3 +26,16 @@ tasks:
     dir: '{{.ANGULAR_DIR}}'
     cmds:
       - ng build
+
+  deploy:
+    desc: Build and deploy to HostGator
+    cmds:
+      - task: build
+      - task: upload
+
+  upload:
+    desc: Upload dist files to HostGator via scp
+    cmds:
+      - cp {{.DIST_DIR}}/index.csr.html {{.DIST_DIR}}/index.html
+      - scp -r {{.DIST_DIR}}/* {{.SSH_HOST}}:{{.REMOTE_DIR}}/
+      - scp {{.ANGULAR_DIR}}/.htaccess {{.SSH_HOST}}:{{.REMOTE_DIR}}/
