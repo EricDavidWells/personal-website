@@ -98,12 +98,12 @@ const LINK_COLORS = [
 ];
 
 @Component({
-  selector: 'app-generic-ik',
+  selector: 'app-workspace-manipulability',
   imports: [FormsModule, CommonModule],
-  templateUrl: './generic-ik.component.html',
-  styleUrl: './generic-ik.component.css'
+  templateUrl: './workspace-manipulability.component.html',
+  styleUrl: './workspace-manipulability.component.css'
 })
-export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
+export class WorkspaceManipulabilityComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('sceneContainer', { static: false }) sceneContainer!: ElementRef<HTMLDivElement>;
   @ViewChild('viewerLayout', { static: false }) viewerLayout!: ElementRef<HTMLDivElement>;
 
@@ -171,7 +171,10 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   showClippingPlanes = false;
   enablePlaneFiltering = false;
   selectedUrdf = 'ur5';
-  availableUrdfs: Array<{ name: string; label: string }> = [];
+  availableUrdfs: Array<{ name: string; label: string; description?: string }> = [];
+  get selectedUrdfDescription(): string | undefined {
+    return this.availableUrdfs.find(u => u.name === this.selectedUrdf)?.description;
+  }
   manipulabilityMetric: 'volume' | 'condition' | 'orientation_volume' | 'orientation_condition' = 'volume';
   private cancelGeneration = false;
 
@@ -204,7 +207,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.project = PROJECTS.find(p => p.slug === 'generic-ik');
+    this.project = PROJECTS.find(p => p.slug === 'workspace-manipulability');
   }
 
   async ngAfterViewInit(): Promise<void> {
@@ -415,8 +418,11 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
 
       try {
         this.kinematicTree = this.wasmModule.loadUrdfFromString(urdfContent);
-      } catch (wasmError) {
-        throw new Error(`Failed to parse URDF: ${wasmError}`);
+      } catch (wasmError: any) {
+        const msg = (typeof wasmError === 'number')
+          ? `WASM exception pointer: ${wasmError}`
+          : wasmError;
+        throw new Error(`Failed to parse URDF: ${msg}`);
       }
 
       this.rootLink = this.wasmModule.getRootLink(this.kinematicTree) || 'base_link';
@@ -2194,9 +2200,10 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       const posAxes = this.extractAxesFromVector(manip.posAxes);
       const oriAxes = this.extractAxesFromVector(manip.oriAxes);
 
-      // Create position ellipsoid (blue) with fixed 0.3 opacity
+      // Create position ellipsoid (blue, scaled by 0.2 for visibility) with fixed 0.3 opacity
+      const scaledPosValues = posValues.map(v => v * 0.2);
       const posEllipsoid = this.createEllipsoidMesh(
-        eePosition, posAxes, posValues, 0x4488ff, 0.3
+        eePosition, posAxes, scaledPosValues, 0x4488ff, 0.3
       );
       posEllipsoid.visible = this.showPositionEllipsoid && this.showManipulabilityEllipsoid;
       this.scene.add(posEllipsoid);
@@ -2210,7 +2217,7 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       this.scene.add(oriEllipsoid);
 
       // Create axis arrows (always hidden)
-      const posAxesGroup = this.createEllipsoidAxes(eePosition, posAxes, posValues, 0x0000ff);
+      const posAxesGroup = this.createEllipsoidAxes(eePosition, posAxes, scaledPosValues, 0x0000ff);
       posAxesGroup.visible = false;
       this.scene.add(posAxesGroup);
 
@@ -2482,10 +2489,16 @@ export class GenericIkComponent implements OnInit, AfterViewInit, OnDestroy {
       if (!urdfContent || urdfContent.trim().length === 0) {
         throw new Error('URDF file is empty');
       }
+      // Strip non-standard URDF elements that confuse the parser
+      urdfContent = urdfContent.replace(/<mujoco[\s\S]*?<\/mujoco>/g, '');
+      urdfContent = urdfContent.replace(/<!--[\s\S]*?-->/g, '');
       try {
         this.kinematicTree = this.wasmModule.loadUrdfFromString(urdfContent);
-      } catch (wasmError) {
-        throw new Error(`Failed to parse URDF: ${wasmError}`);
+      } catch (wasmError: any) {
+        const msg = (typeof wasmError === 'number')
+          ? `WASM exception pointer: ${wasmError}`
+          : wasmError;
+        throw new Error(`Failed to parse URDF: ${msg}`);
       }
       this.rootLink = this.wasmModule.getRootLink(this.kinematicTree) || 'base_link';
       this.extractJointInfo();

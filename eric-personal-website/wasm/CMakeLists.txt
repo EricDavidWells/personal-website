@@ -19,8 +19,11 @@ target_include_directories(kinematics PRIVATE
   ${DEPS_INCLUDE_DIR}
 )
 
+set(WASM_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/assets/wasm")
+
 set_target_properties(kinematics PROPERTIES
   SUFFIX ".js"
+  RUNTIME_OUTPUT_DIRECTORY "${WASM_OUTPUT_DIR}"
   LINK_FLAGS "\
     --bind \
     -s MODULARIZE=1 \
@@ -30,6 +33,15 @@ set_target_properties(kinematics PROPERTIES
     -s EXPORTED_RUNTIME_METHODS=['FS'] \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s ENVIRONMENT='web' \
+    -s ASSERTIONS=1 \
+    -s DISABLE_EXCEPTION_CATCHING=0 \
     -O2 \
   "
+)
+
+# Copy the .wasm file alongside the .js file after build
+add_custom_command(TARGET kinematics POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy
+    "$<TARGET_FILE_DIR:kinematics>/kinematics.wasm"
+    "${WASM_OUTPUT_DIR}/kinematics.wasm"
 )

@@ -1,54 +1,47 @@
 [
   {
     "name": "ur5",
-    "label": "UR5 (6DOF)"
-  },
-  {
-    "name": "simple_3dof_a_f_f",
-    "label": "simple_3dof_a_f_f"
-  },
-  {
-    "name": "simple_3dof_f_a_f",
-    "label": "simple_3dof_f_a_f"
-  },
-  {
-    "name": "shoulder_joint_rotation_first",
-    "label": "shoulder_joint_rotation_first"
-  },
-  {
-    "name": "shoulder_joint_rotation_second",
-    "label": "shoulder_joint_rotation_second"
-  },
-  {
-    "name": "simple_3dof_f_a_f45",
-    "label": "simple_3dof_f_a_f45"
-  },
-  {
-    "name": "simple_3dof_f_a_fn45",
-    "label": "simple_3dof_f_a_fn45"
+    "label": "UR5 (6R)",
+    "description": "very popular 6DOF arm"
   },
   {
     "name": "franka",
-    "label": "Franka FR3 (7DOF)"
+    "label": "Franka FR3 (7R)",
+    "description": "very popular 7DOF arm"
+  },
+  {
+    "name": "classic_3r_order_1",
+    "label": "classic_3r_order_1",
+    "description": "classic 3DOF robot for position only tracking with two DOFs always parallel"
+  },
+  {
+    "name": "classic_3r_order_2",
+    "label": "classic_3r_order_2",
+    "description": "classic 3DOF robot for position only tracking with no constant parallel DOFS"
   },
   {
     "name": "scara",
-    "label": "SCARA (4DOF)"
+    "label": "SCARA (RRPR)",
+    "description": "pick-and-place favorite"
   },
   {
     "name": "gantry",
-    "label": "Gantry (3P Cartesian)"
+    "label": "Gantry (3P)",
+    "description": "the simplest 3DOF position tracking robot.  Looking at the position manipulability, there is no hint of a singularity in sight.  The position isotropy shows 1.0, meaning it can move equally well in all directions."
   },
   {
     "name": "cylindrical",
-    "label": "Cylindrical (1R+2P)"
+    "label": "Cylindrical (1R+2P)",
+    "description": "hadn't seen this before but apparenty it is common"
   },
   {
     "name": "stanford_arm",
-    "label": "Stanford Arm (2R+1P+3R)"
+    "label": "Stanford Arm (2R+1P+3R)",
+    "description": "one of the first robots built in the 60s for computer control"
   },
   {
     "name": "shoulder_3r",
-    "label": "Spherical Shoulder (3R ZYX)"
+    "label": "Spherical Shoulder (3R)",
+    "description": "have seen this in humanoid shoulders quite often for full orientation control via three DOFs with intersecting axes. It is interesting to look at the orientation manipulability, as there is a singularity when the 1st and 3rd DOFs align."
   }
 ]

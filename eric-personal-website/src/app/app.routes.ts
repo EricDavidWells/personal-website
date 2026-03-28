@@ -93,10 +93,10 @@ export const routes: Routes = [
         }
     },
     {
-        path: 'projects/generic-ik',
+        path: 'projects/workspace-manipulability',
         pathMatch: 'full',
         loadComponent: () => {
-            return import('./components/generic-ik/generic-ik.component').then((m) => m.GenericIkComponent)
+            return import('./components/workspace-manipulability/workspace-manipulability.component').then((m) => m.WorkspaceManipulabilityComponent)
         }
     },
 ];

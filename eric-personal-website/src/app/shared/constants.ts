@@ -2,11 +2,11 @@ import { Project } from './project';
 
 export const PROJECTS: Project[] = [
   new Project(
-    'generic-ik',
-    'Generic IK Kinematics Viewer',
+    'workspace-manipulability',
+    'Workspace Manipulability Visualizer',
     '2026-03',
-    'assets/images/transform-sandbox-icon.png',
-    `Interactive visualization of a UR5 robot arm using forward kinematics compiled from C++ to WebAssembly.`
+    'assets/images/workspace-manipulability-visualizer.png',
+    `Interactive visualization tool for serial robots workspace and manipulability.`
   ),
   new Project(
     'transform-sandbox',

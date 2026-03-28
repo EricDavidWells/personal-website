@@ -1,0 +1,25 @@
+version: '3'
+
+vars:
+  WASM_BUILD_DIR: eric-personal-website/wasm/build
+  ANGULAR_DIR: eric-personal-website
+
+tasks:
+  build:
+    desc: Build WASM and Angular app
+    cmds:
+      - task: build-wasm
+      - task: build-angular
+
+  build-wasm:
+    desc: Build WASM with emscripten
+    dir: '{{.WASM_BUILD_DIR}}'
+    cmds:
+      - emcmake cmake ..
+      - emmake make
+
+  build-angular:
+    desc: Build Angular app
+    dir: '{{.ANGULAR_DIR}}'
+    cmds:
+      - ng build

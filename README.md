@@ -15,6 +15,22 @@
 </IfModule>
 ```
 
+### Build steps
+- install npm
+- install nvm
+- npm install
+- install emscripten
+- build wasm
+
+```
+cd wasm
+mkdir build
+cd build
+emcmake ..
+emmake .
+```
+
+
 TODO:
 - write up quickly explainig the metrics, and tools to use
 - write up comparing shoulder joint rotation first vs. rotation second

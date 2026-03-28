@@ -26,6 +26,9 @@
                             }
                         </select>
                     </div>
+                    @if (selectedUrdfDescription) {
+                        <div class="metric-description">{{ selectedUrdfDescription }}</div>
+                    }
                     <div class="control-row">
                         <input #urdfFileInput type="file" accept=".urdf,.xml"
                                style="display:none"
@@ -79,6 +82,26 @@
                 <legend>Manipulability</legend>
 
                 <div class="workspace-controls">
+                    <!-- Clipping Planes (before generation) -->
+                    <div class="config-group">
+                        <div class="control-row">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="showClippingPlanes"
+                                       (change)="onClippingPlanesVisibilityChange()" />
+                                Show Clipping Planes
+                            </label>
+                        </div>
+                        <div class="control-row" [class.disabled]="!showClippingPlanes">
+                            <label>
+                                <input type="checkbox"
+                                       [(ngModel)]="enablePlaneFiltering"
+                                       (change)="onPlaneFilteringChange()" />
+                                Enable Plane Filtering
+                            </label>
+                        </div>
+                    </div>
+
                     <!-- Point Cloud Generation Controls -->
                     <div class="generation-controls">
                         <div class="control-row inline-generation">
@@ -182,23 +205,6 @@
                                        (change)="onWorkspaceVolumeVisibilityChange()"
                                        [disabled]="!pointCloud" />
                                 Show Workspace Volume
-                            </label>
-                        </div>
-                        <div class="control-row">
-                            <label>
-                                <input type="checkbox"
-                                       [(ngModel)]="showClippingPlanes"
-                                       (change)="onClippingPlanesVisibilityChange()" />
-                                Show Clipping Planes
-                            </label>
-                        </div>
-                        <div class="control-row" [class.disabled]="!showClippingPlanes">
-                            <label>
-                                <input type="checkbox"
-                                       [(ngModel)]="enablePlaneFiltering"
-                                       (change)="onPlaneFilteringChange()"
-                                       [disabled]="!pointCloud" />
-                                Enable Plane Filtering
                             </label>
                         </div>
                         <div class="control-row">
